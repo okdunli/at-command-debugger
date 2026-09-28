@@ -1,0 +1,215 @@
+<div align="center">
+<img alt="AT指令调试台" src="icon.svg" height="128">
+
+<h1>AT指令调试台</h1>
+
+[![English](https://img.shields.io/badge/English-README-blue?style=for-the-badge&labelColor=000000)](README.md)
+[![License](https://img.shields.io/badge/license-Apache--2.0-green?style=for-the-badge&labelColor=000000)](LICENSE)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-58A6FF?style=for-the-badge&labelColor=000000)]()
+
+</div>
+
+跨平台（Windows / macOS / Linux）的嵌入式模组 **AT 指令测试上位机**——LoRaWAN、LoRa 或任意 AT 固件均可，指令集由声明式 JSON 配置集描述，换模组不改代码。把「开串口终端、
+手敲指令、盯着返回猜对错」的传统调试方式，变成填表式的流程：选场景 →
+填参数 → 预览指令序列 → 一键执行 → 导出测试报告。
+
+技术栈：**Python + PyWebView（原生 WebView）+ 原生 HTML/CSS/JS**，
+一套代码编译三端；也支持 `--browser` 模式直接用浏览器访问。
+
+## 概述
+
+手动测一块模块的AT固件，要记住几十条指令的参数范围与先后顺序……
+在裸终端里逐条敲，慢、易错，而且事后没有规范的记录可查。
+
+AT指令调试台补齐这些缺口：
+
+- 指令库全收录，带参数校验、示例与帮助；
+- 一键配置场景按正确顺序下发整段配置流程；
+- 可运行的测试套件（含负向用例与回读校验），报告可导出；
+- 实时串口终端：TX/RX 着色日志、HEX 视图、循环发送、自动应答；
+- 内置设备模拟器，无硬件也能跑通全流程；
+- OEM 配置集把整套指令集外置成 JSON——适配新模组改 JSON，不改 Python。
+
+---
+
+## 功能
+
+| 模块 | 说明 |
+|------|------|
+| 一键配置 | 10 个场景模板（OTAA 入网 / ABP 激活 / Class B / Class C / PER 收发 / 跳频 / 设备体检 / 快速上行 / 恢复出厂），填表 → 预览指令序列 → 单步或一键执行 |
+| 指令库 | 声明式指令手册：参数校验（范围 / HEX / 枚举 / 正则）、示例与帮助；非法参数在进入串口前就被拦下 |
+| 测试套件 | 7 大类 45 个用例，含负向用例（错误类型、越界值）与回读校验（写入后读回比对）；可勾选部分运行，结果导出 Markdown / CSV / HTML / JSON |
+| 自定义按钮 | 常用指令固化成按钮：多指令序列、分组、颜色图标、`{变量}` 占位符（点击时填入）；按配置集持久化，支持导入导出 |
+| 串口终端 | TX / RX / 系统消息着色、时间戳、指令历史（↑↓）、文本 / HEX 双视图、循环发送（定时重发）、关键字自动应答、多行批量发送（支持 `#` 注释与 WAIT 等待）、宏录制、RSSI 信号监控趋势图、日志书签、字节计数清零 |
+| 引脚控制 | DTR / RTS 实时开关放在串口栏，排查「别的工具能收、本工具收不到」这类因打开瞬间引脚电平复位模组 / 进 bootloader 的问题 |
+| 虚拟设备 | 内置设备模拟器（`SIM`端口），实现入网、上下行、事件模型；演示、开发与自动化测试都不需要硬件 |
+| 配置集（OEM） | 一款模组的完整「人格」——品牌文案、指令库、分类、频段 / Class、场景、套件、默认按钮、模拟器行为——全部在外部 `profile.json`；标题栏下拉切换，应用立刻变成另一款模组的专用上位机，不改一行代码 |
+| 测试报告 | 套件运行导出 Markdown / CSV / HTML / JSON；终端日志可导出；配置与按钮集 JSON 包导入导出 |
+| 现代化界面 | 无边框窗口原生拖动 / 八向缩放、几何位置跨会话记忆；深色 / 浅色主题、四种预设强调色 + 自定义色、界面缩放 85–115 %、开屏与过渡动画；配置集在标题栏即切 |
+
+---
+
+## 快速开始
+
+### 环境要求
+
+| 项目 | 要求 |
+|------|------|
+| 操作系统 | Windows 10+ / macOS / Linux |
+| Python | 3.10 或更新 |
+| GUI | Windows：Edge WebView2（Win11 自带）；macOS：WebKit（内置）；Linux：WebKitGTK（`libwebkit2gtk-4.0-dev`） |
+| 硬件 | 无——内置模拟器可跑通全流程；真机测试需 USB 串口 + 模组 |
+
+### 安装运行
+
+```bash
+cd at-command-debugger
+pip install -r requirements.txt
+python main.py               # 桌面应用
+python main.py --browser --open   # 浏览器模式
+python main.py --selftest    # 自检（含模拟器链路）
+```
+
+Windows 可直接双击 `run.bat`；要免 Python 的单文件可执行程序见下文「打包」。
+
+### 命令行参数
+
+| 参数 | 说明 |
+|------|------|
+| （无） | 启动桌面应用（默认） |
+| `--browser` | 不开桌面窗口，仅本地 HTTP 服务 |
+| `--open` | 配合 `--browser`：自动打开系统浏览器 |
+| `--host` / `--port` | 浏览器模式监听地址 / 端口（0=自动） |
+| `--no-http` | 桌面模式不启动辅助 HTTP 服务 |
+| `--debug` | 打开 WebView 开发者工具 |
+| `--verbose` | 详细日志 |
+| `--selftest` | 自检后退出 |
+| `--instance NAME` | 多实例：独立数据目录与锁，可同时开多个窗口分别控制不同设备 |
+
+### 首次使用
+
+1. 串口栏选端口——或选 `SIM` 连内置虚拟设备——波特率按固件填写，点「连接」。
+2. 打开「一键配置」，选 *OTAA 入网*，填 DevEUI / AppKey，预览后执行。
+3. 打开「测试套件」，勾选一类用例运行，导出报告。
+
+---
+
+## 配置集（OEM 机制）
+
+**一个配置集 = 一款模组的完整「人格」**，一个 JSON 文件决定应用显示和发送的一切。双层目录合并，同名时用户目录优先：
+
+```
+<程序目录>/profiles/<id>/profile.json     内置（exe 同级外置目录，只读）
+<数据目录>/profiles/<id>/profile.json     用户自建 / 导入（可写，优先）
+```
+
+除 `id` / `name` 外全部可选，缺失自动走内置默认：`brand`、`subtitle`、
+`icon`、`version`、`doc`、`categories`、`bands`、`classes`、`verbose_levels`、
+`defaults`、`band_rx2`、`commands`、`presets`、`suites`、`buttons`、`device`。
+
+参数校验是可序列化的声明式描述（`{"type":"range","low":0,"high":9}`、
+`{"type":"hex","size":8}`、`{"type":"choice",...}`、`{"type":"any","of":[...]}`）；
+场景步骤是模板 + 过滤器插值（`{deveui|key:8}`、`{text|hex}`、
+`{band|rx2:freq}`、`{x|default:5}`）；条件步骤支持
+`when: "join" | "!join" | "adr==0" | "a&&b" | "a||b"`。
+
+典型流程：复制内置 *Example 示例工程* → 导出 → 改 JSON → 导入 → 验证 →
+放进 exe 同级的 `profiles/` 文件夹即为内置（打包版从程序目录外置读取；开发模式读项目根的 `profiles/`）。导出包带
+`{"kind":"at-command-debugger-profile","format":1,...}` 标识。
+
+---
+
+## 数据目录
+
+| 平台 | 路径 |
+|------|------|
+| Windows | `%APPDATA%\AT指令调试台` |
+| macOS | `~/Library/Application Support/AT指令调试台` |
+| Linux | `~/.local/share/AT指令调试台` |
+
+在可执行文件旁放一个 `portable.txt` 即为便携模式（数据目录跟随程序）。
+
+| 文件 / 目录 | 内容 |
+|-------------|------|
+| `config.json` | 全部应用配置（串口、协议、界面、窗口、行为） |
+| `profiles/<id>/` | 用户配置集；每个配置集一份 `buttons.json`（自定义按钮） |
+| `history.json` | 发送历史 |
+| `export/` | 报告与导出包 |
+| `logs/debugger.log` | 滚动应用日志 |
+
+全部为纯 JSON / 文本，删掉即恢复默认。
+
+---
+
+## 常见问题
+
+**连上了，但什么都收不到、发不出。**
+几乎都是接线或模组状态问题，不是软件。按顺序检查：端口选的是真实 USB 串口（不是 ACPI 占位口）；TX↔RX 交叉连接且共地；模组已上电且未处于复位；波特率与固件一致；若模组进过透传模式，先发 `+++`（不带回车、前后各留 1 秒静默）退出再发 `AT`。模组 0 字节回传时，发送失败的提示里会带上这份排查清单。
+
+**一连上模组就复位 / 没声音了。**
+部分固件对打开串口瞬间的 DTR/RTS 电平敏感，连接后用串口栏的 DTR / RTS 开关翻转引脚电平即可。
+
+**配置集下拉不见了。**
+只存在一个配置集时选择器自动隐藏；在 设置 → 配置集 新建或导入一个即可。
+
+**浏览器模式报连接错误。**
+可能是另一个实例占了 HTTP 端口，用 `--port` 固定端口，或用 `--instance` 给实例独立数据目录。
+
+---
+
+## 项目结构
+
+```
+at-command-debugger/
+├── main.py                  入口
+├── run.bat                  Windows 启动器
+├── build.py / atcdbg.spec   PyInstaller 打包（三平台脚本）
+├── requirements.txt
+├── profiles/example/        内置示例配置集（全功能演示）
+├── atcdbg/
+│   ├── core/                与 UI 无关的核心逻辑
+│   │   ├── serial_mgr.py    串口、事件队列、DTR/RTS
+│   │   ├── runner.py        指令 / 序列执行引擎
+│   │   ├── protocol.py      帧解析，OK/ERROR/EVENT 判定
+│   │   ├── commands.py      指令库 + 配置集加载
+│   │   ├── presets.py       场景模板 + 插值
+│   │   ├── suites.py        测试套件引擎
+│   │   ├── buttons.py       自定义按钮持久化
+│   │   ├── device_sim.py    设备模拟器
+│   │   ├── profiles.py      配置集发现、合并、导入导出
+│   │   ├── validators.py    声明式参数校验
+│   │   ├── exporter.py      报告生成（md/csv/html/json）
+│   │   ├── config.py        配置结构与自动保存
+│   │   ├── paths.py         数据目录、日志
+│   │   └── winnative.py     Win32 拖动 / 缩放 / 系统菜单
+│   └── webui/
+│       ├── app.py           窗口生命周期、HTTP 服务
+│       ├── backend.py       JS↔Python 桥（invoke 统一调度）
+│       └── ui/              HTML / CSS / JS 前端
+```
+
+常见定制：
+
+- **适配新模组**：复制并修改 profile JSON——指令、场景、套件、按钮、模拟器应答表全是数据，不用写 Python。
+- **加一个后端接口**：在 `webui/backend.py` 加公共方法，前端经 `invoke` 统一调度即可调用。
+- **改前端**：`webui/ui/`，改完重启生效（不热重载）。
+- **验证环境**：`python main.py --selftest` 不开窗即可检验指令库、套件、模拟器链路与路径。
+
+## 打包
+
+```bash
+build_windows.bat     # Windows
+bash build_mac.sh     # macOS
+bash build_linux.sh   # Linux（需 WebKitGTK，见脚本注释）
+```
+
+产物是**单文件可执行程序**：`dist/AT指令调试台.exe`（macOS / Linux 为 `dist/AT指令调试台`），可直接移动、分发，无需 Python 环境。注意：
+
+- PyInstaller 只能打包当前系统，不能交叉编译——在哪个系统上跑脚本就出哪个系统的产物
+- 单文件版首次启动需解压到临时目录，稍慢属正常
+- **配置集为外置目录**：exe 不打包任何配置集，构建后自动复制一份 `profiles/` 到 `dist/`，应用从同级 `profiles/` 文件夹读取；增删配置集改文件夹即可，无需重新打包
+- 图标直接使用 `assets/` 文件夹（`icon.png` / `icon_256.png` / `icon.ico`），打包时原样内置；想换图标直接替换该文件夹里的同名文件即可，无需任何生成步骤
+
+## License
+
+[Apache License 2.0](LICENSE)
