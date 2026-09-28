@@ -1,0 +1,6 @@
+pywebview>=5.0        
+pyserial>=3.5         
+pyinstaller>=6.0 ; platform_system == "Windows"
+pyinstaller>=6.0 ; platform_system == "Linux"
+pyinstaller>=6.0 ; platform_system == "Darwin"
+Pillow>=10.0
