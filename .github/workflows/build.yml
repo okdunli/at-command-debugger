@@ -13,7 +13,19 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-latest, ubuntu-latest]
+        include:
+          - os: windows-latest
+          - os: windows-11-arm
+            experimental: true
+          - os: ubuntu-22.04
+          - os: ubuntu-24.04-arm
+          - os: macos-15
+          - os: macos-15-intel
+
+    continue-on-error: ${{ matrix.experimental == true }}
+
+    env:
+      PYTHONUTF8: "1"
 
     steps:
       - uses: actions/checkout@v4
@@ -37,7 +49,7 @@ jobs:
 
       - name: Install PyGObject (Linux)
         if: runner.os == 'Linux'
-        run: pip install pygobject
+        run: pip install pycairo "pygobject<3.51"
 
       - name: Build
         run: python build.py
@@ -45,7 +57,55 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: AT-Command-Debugger-${{ runner.os }}
+          name: AT-Command-Debugger-${{ runner.os }}-${{ runner.arch }}
+          path: dist/
+          if-no-files-found: error
+          retention-days: 14
+
+  build-linux-legacy:
+    name: Build (linux-20.04 legacy)
+    runs-on: ubuntu-latest
+    container: ubuntu:20.04
+    continue-on-error: true
+    env:
+      PYTHONUTF8: "1"
+      DEBIAN_FRONTEND: noninteractive
+    steps:
+      - name: Install build toolchain
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            git build-essential curl ca-certificates pkg-config wget \
+            libssl-dev zlib1g-dev libbz2-dev libreadline-dev libsqlite3-dev \
+            libffi-dev liblzma-dev libncursesw5-dev uuid-dev \
+            libglib2.0-dev libcairo2-dev libgirepository1.0-dev
+
+      - name: Build CPython 3.12.10 against focal glibc
+        run: |
+          curl -fsSL https://www.python.org/ftp/python/3.12.10/Python-3.12.10.tgz -o /tmp/Python.tgz
+          tar -C /tmp -xf /tmp/Python.tgz
+          cd /tmp/Python-3.12.10
+          ./configure --prefix=/opt/python3 --enable-shared \
+            LDFLAGS="-Wl,-rpath,/opt/python3/lib" --with-ensurepip=upgrade
+          make -j"$(nproc)" > /tmp/make.log 2>&1 || { tail -n 50 /tmp/make.log; exit 1; }
+          make install > /dev/null
+          /opt/python3/bin/python3.12 -m venv /opt/venv
+          /opt/venv/bin/python --version
+
+      - uses: actions/checkout@v4
+
+      - name: Install Python dependencies
+        run: |
+          /opt/venv/bin/pip install --upgrade pip
+          /opt/venv/bin/pip install -r requirements.txt pycairo "pygobject<3.51"
+
+      - name: Build
+        run: /opt/venv/bin/python build.py
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: AT-Command-Debugger-Linux-X64-Legacy
           path: dist/
           if-no-files-found: error
           retention-days: 14
