@@ -18,7 +18,11 @@ _MIN_SIZE = (1120, 640)
 
 
 def _icon_file() -> str | None:
-    for name in ("icon.ico", "icon.png", "icon_256.png"):
+    if sys.platform == "win32":
+        names = ("icon.ico", "icon.png", "icon_256.png")
+    else:
+        names = ("icon.png", "icon_256.png", "icon.ico")
+    for name in names:
         for base in (paths.app_dir(), paths.app_dir().parent):
             path = base / "assets" / name
             if path.exists():
