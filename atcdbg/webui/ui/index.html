@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark" data-accent="blue" class="is-web">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AT指令调试台</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'%3E%3Cpath d='M10 34 L20 14 L28 26 L38 12' fill='none' stroke='%2358a6ff' stroke-width='4' stroke-linecap='round' stroke-linejoin='round'/%3E%3Ccircle cx='38' cy='12' r='4' fill='%2358a6ff'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<div class="bg-orbs" aria-hidden="true">
+  <span class="orb orb-1"></span><span class="orb orb-2"></span>
+  <span class="orb orb-3"></span><span class="grid-lines"></span>
+</div>
+
+<div id="splash" class="splash">
+  <div class="splash-logo">
+    <svg viewBox="0 0 48 48" width="72" height="72" aria-hidden="true">
+      <path d="M10 34 L20 14 L28 26 L38 12" fill="none" stroke="currentColor"
+            stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="38" cy="12" r="3.4" fill="currentColor"/>
+    </svg>
+  </div>
+  <div class="splash-title" id="splashTitle">AT指令调试台</div>
+  <div class="splash-sub" id="splashSub">正在加载配置集…</div>
+  <div class="splash-bar"><i></i></div>
+</div>
+
+<header class="titlebar">
+  <div class="titlebar-drag">
+    <div class="brand">
+      <span class="brand-mark">
+        <svg viewBox="0 0 48 48" width="20" height="20" aria-hidden="true">
+          <path d="M10 34 L20 14 L28 26 L38 12" fill="none" stroke="currentColor"
+                stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+          <circle cx="38" cy="12" r="3.6" fill="currentColor"/>
+        </svg>
+      </span>
+      <span class="brand-name" id="brandName">AT指令调试台</span>
+      <span class="brand-ver" id="brandVersion">v1.0.0</span>
+      <div class="profile-picker" id="profilePicker" hidden>
+        <span class="pp-ico" data-icon="grid"></span>
+        <select class="mini-select" id="selProfile" title="切换配置集（OEM）"></select>
+      </div>
+      <div class="serial-bar" id="serialBar"></div>
+    </div>
+  </div>
+  <div class="titlebar-actions">
+    <button class="win-btn" id="btnHelp" title="快捷键帮助（F1）">?</button>
+    <button class="win-btn" id="btnPin" title="窗口置顶">
+      <svg viewBox="0 0 16 16" width="12" height="12">
+        <path d="M8 2a3 3 0 0 1 3 3c0 1.6-1.1 2.4-2 2.9V13a1 1 0 0 1-2 0V7.9C6.1 7.4 5 6.6 5 5a3 3 0 0 1 3-3z"
+              fill="currentColor"/>
+      </svg>
+    </button>
+    <button class="win-btn" id="btnMin" title="最小化">
+      <svg viewBox="0 0 16 16" width="12" height="12"><path d="M2 8h12"
+        stroke="currentColor" stroke-width="1.6" fill="none"/></svg>
+    </button>
+    <button class="win-btn" id="btnMax" title="最大化">
+      <svg viewBox="0 0 16 16" width="12" height="12"><rect x="3" y="3"
+        width="10" height="10" rx="1.5" stroke="currentColor"
+        stroke-width="1.6" fill="none"/></svg>
+    </button>
+    <button class="win-btn win-close" id="btnClose" title="关闭">
+      <svg viewBox="0 0 16 16" width="12" height="12"><path d="M4 4l8 8M12 4l-8 8"
+        stroke="currentColor" stroke-width="1.6" fill="none"/></svg>
+    </button>
+  </div>
+</header>
+
+<div class="app">
+  <aside class="sidebar">
+    <nav class="nav" id="nav">
+      <button class="nav-item active" data-page="dashboard">
+        <span class="nav-ico" data-icon="gauge"></span>
+        <span class="nav-text" data-i18n="nav.dashboard">仪表盘</span>
+      </button>
+      <button class="nav-item" data-page="presets">
+        <span class="nav-ico" data-icon="rocket"></span>
+        <span class="nav-text" data-i18n="nav.presets">一键配置</span>
+      </button>
+      <button class="nav-item" data-page="buttons">
+        <span class="nav-ico" data-icon="grid"></span>
+        <span class="nav-text" data-i18n="nav.buttons">常用功能</span>
+      </button>
+      <button class="nav-item" data-page="suites">
+        <span class="nav-ico" data-icon="check"></span>
+        <span class="nav-text" data-i18n="nav.suites">测试套件</span>
+      </button>
+      <button class="nav-item" data-page="terminal">
+        <span class="nav-ico" data-icon="terminal"></span>
+        <span class="nav-text" data-i18n="nav.terminal">串口终端</span>
+      </button>
+      <button class="nav-item" data-page="logs">
+        <span class="nav-ico" data-icon="scroll-text"></span>
+        <span class="nav-text">运行日志</span>
+      </button>
+      <button class="nav-item" data-page="errcodes">
+        <span class="nav-ico" data-icon="shield-alert"></span>
+        <span class="nav-text">错误码库</span>
+      </button>
+      <button class="nav-item" data-page="commands">
+        <span class="nav-ico" data-icon="list"></span>
+        <span class="nav-text" data-i18n="nav.commands">指令库</span>
+      </button>
+      <button class="nav-item" data-page="settings">
+        <span class="nav-ico" data-icon="gear"></span>
+        <span class="nav-text" data-i18n="nav.settings">设置</span>
+      </button>
+      <button class="nav-item" data-page="about">
+        <span class="nav-ico" data-icon="info"></span>
+        <span class="nav-text" data-i18n="nav.about">关于</span>
+      </button>
+    </nav>
+    <div class="sidebar-foot">
+      <div class="conn-pill" id="connPill">
+        <span class="dot"></span><span class="conn-text">未连接</span>
+      </div>
+    </div>
+  </aside>
+
+  <main class="main" id="main">
+
+    <section class="page active" id="page-dashboard">
+      <div class="page-head">
+        <h1 data-i18n="dash.title">仪表盘</h1>
+        <p class="page-sub" data-i18n="dash.sub">连接模组后即可开始一键配置与测试</p>
+      </div>
+      <div class="stat-row" id="statRow"></div>
+      <div class="panel">
+        <div class="panel-head">
+          <h3 data-i18n="dash.quick">快速操作</h3>
+          <span class="cmd-cat">来自「一键配置 / 常用功能 / 测试套件」的收藏，点击卡片即可运行</span>
+        </div>
+        <div class="quick-grid" id="quickGrid"></div>
+      </div>
+      <p class="profile-intro" id="profileIntro"></p>
+      <div class="http-chip" id="httpChip" hidden></div>
+      <div class="panel" id="lastResultPanel" hidden>
+        <div class="panel-head">
+          <h3 data-i18n="dash.last">最近一次执行结果</h3>
+          <button class="ghost-btn" id="btnExportDash">导出报告</button>
+        </div>
+        <div id="lastResultBody"></div>
+      </div>
+    </section>
+
+
+    <section class="page" id="page-presets">
+      <div class="page-head">
+        <h1 data-i18n="pre.title">一键配置</h1>
+        <p class="page-sub" data-i18n="pre.sub">选择场景 → 填写参数 → 一键下发整条指令流程</p>
+        <div class="head-actions">
+          <button class="primary-btn edit-only" id="btnAddPreset">+ 新建场景</button>
+        </div>
+      </div>
+      <div class="preset-grid" id="presetGrid"></div>
+      <div class="panel" id="presetPanel" hidden>
+        <div class="panel-head">
+          <h3 id="presetTitle">场景</h3>
+          <div class="head-actions">
+            <button class="ghost-btn" id="btnPresetPreview">预览指令</button>
+            <button class="primary-btn" id="btnPresetRun">
+              <span data-i18n="pre.run">一键执行</span>
+            </button>
+          </div>
+        </div>
+        <div class="form-grid" id="presetForm"></div>
+        <div class="steps-preview" id="stepsPreview" hidden></div>
+      </div>
+      <div class="panel" id="runPanel" hidden>
+        <div class="panel-head">
+          <h3 data-i18n="pre.progress">执行进度</h3>
+          <button class="ghost-btn danger" id="btnCancelRun">停止</button>
+        </div>
+        <div class="progress-wrap">
+          <div class="progress-track"><div class="progress-fill" id="runFill"></div></div>
+          <div class="progress-text" id="runText">0 / 0</div>
+        </div>
+        <div class="run-list" id="runList"></div>
+      </div>
+    </section>
+
+
+    <section class="page" id="page-commands">
+      <div class="page-head">
+        <h1 data-i18n="cmd.title">指令库</h1>
+        <p class="page-sub" id="cmdCount">共 0 条指令</p>
+        <div class="head-actions">
+          <button class="primary-btn edit-only" id="btnAddCmd">+ 新建指令</button>
+        </div>
+      </div>
+      <div class="toolbar">
+        <div class="search-box">
+          <span class="search-ico" data-icon="search"></span>
+          <input type="text" id="cmdSearch" placeholder="搜索指令，如 DEUI / 入网 / 频率">
+        </div>
+        <div class="chip-row" id="cmdCats"></div>
+      </div>
+      <div class="cmd-list" id="cmdList"></div>
+    </section>
+
+
+    <section class="page" id="page-buttons">
+      <div class="page-head">
+        <h1 data-i18n="btn.title">常用功能</h1>
+        <p class="page-sub" data-i18n="btn.sub">把常用指令固化成按钮，点击即发</p>
+        <div class="head-actions">
+          <button class="ghost-btn" id="btnImport">导入</button>
+          <button class="ghost-btn" id="btnExportBtns">导出</button>
+          <button class="ghost-btn" id="btnResetBtns">恢复默认</button>
+          <button class="primary-btn edit-only" id="btnAddBtn">+ 新建按钮</button>
+        </div>
+      </div>
+      <div id="btnGroups"></div>
+    </section>
+
+
+    <section class="page" id="page-suites">
+      <div class="page-head">
+        <h1 data-i18n="suite.title">测试套件</h1>
+        <p class="page-sub" id="suiteCount">共 0 个用例</p>
+        <div class="head-actions">
+          <button class="ghost-btn" id="btnSelAll">全选</button>
+          <button class="ghost-btn" id="btnSelNone">全不选</button>
+          <button class="ghost-btn" id="btnSelSafe">仅安全项</button>
+          <button class="ghost-btn" id="btnSaveBaseline" title="把最近一次套件结果存为基线快照">
+            <span data-icon="anchor"></span>保存基线</button>
+          <button class="ghost-btn" id="btnCompareRun" title="选一条基线重跑选中用例并逐条 diff（实机 vs SIM / 升级前后回归）">
+            <span data-icon="git-compare"></span>对比运行</button>
+          <button class="primary-btn edit-only" id="btnAddSuite">+ 新建套件</button>
+          <button class="primary-btn" id="btnRunSuite">运行选中</button>
+        </div>
+      </div>
+      <div id="suiteList"></div>
+      <div class="panel" id="suitePanel" hidden>
+        <div class="panel-head">
+          <h3 data-i18n="suite.result">测试结果</h3>
+          <div class="head-actions">
+            <button class="ghost-btn" id="btnCancelSuite">停止</button>
+            <button class="ghost-btn" id="btnExportMd">Markdown</button>
+            <button class="ghost-btn" id="btnExportCsv">CSV</button>
+            <button class="ghost-btn" id="btnExportHtml">HTML</button>
+            <button class="ghost-btn" id="btnExportJson">JSON</button>
+          </div>
+        </div>
+        <div class="progress-wrap">
+          <div class="progress-track"><div class="progress-fill" id="suiteFill"></div></div>
+          <div class="progress-text" id="suiteText">0 / 0</div>
+        </div>
+        <div class="result-summary" id="suiteSummary"></div>
+        <div class="result-table-wrap"><table class="result-table" id="suiteTable"></table></div>
+      </div>
+    </section>
+
+
+    <section class="page" id="page-terminal">
+      <div class="page-head">
+        <h1 data-i18n="term.title">串口终端</h1>
+        <p class="page-sub" data-i18n="term.sub">串口日志：仅串口收发数据（TX/RX）；系统消息、配置切换、连接事件等请见「程序日志」页</p>
+        <div class="head-actions">
+          <label class="switch"><input type="checkbox" id="chkAutoScroll">
+            <span>自动滚动</span></label>
+          <label class="switch"><input type="checkbox" id="chkTimestamp">
+            <span>时间戳</span></label>
+          <label class="switch"><input type="checkbox" id="chkHexView">
+            <span>HEX 视图</span></label>
+          <button class="ghost-btn" id="btnLoopSend" title="定时重复发送一条指令">
+            <span data-icon="repeat"></span>循环发送</button>
+          <button class="ghost-btn" id="btnAutoReply" title="收到指定关键字自动回复">
+            <span data-icon="reply"></span>自动应答</button>
+          <button class="ghost-btn" id="btnDtr" title="DTR 引脚电平切换（可用于模组复位/唤醒）">
+            <span data-icon="toggle-left"></span>DTR</button>
+          <button class="ghost-btn" id="btnRts" title="RTS 引脚电平切换（可用于 BOOT 选择）">
+            <span data-icon="toggle-right"></span>RTS</button>
+          <button class="ghost-btn" id="btnResetCounters" title="清零收发字节计数">
+            <span data-icon="rotate-ccw"></span>计数清零</button>
+          <button class="ghost-btn" id="btnMacro" title="录制手动发送的指令序列，一键生成常用按钮">
+            <span data-icon="circle-dot"></span>录制宏</button>
+          <button class="ghost-btn" id="btnSignal" title="定时读取模组 RSSI 并绘制趋势图">
+            <span data-icon="activity"></span>信号监控</button>
+          <button class="ghost-btn" id="btnBulk" title="多行指令批量发送（支持 # 注释与 WAIT 秒等待，可回放导出的 AT 脚本）">
+            <span data-icon="list-checks"></span>批量发送</button>
+          <button class="ghost-btn" id="btnMark" title="在日志流插入书签标记（Ctrl+M）">
+            <span data-icon="bookmark"></span>标记</button>
+          <button class="ghost-btn" id="btnLogFiles">日志文件</button>
+          <button class="ghost-btn" id="btnExportLog">导出日志</button>
+          <button class="ghost-btn danger" id="btnClearLog">清空</button>
+        </div>
+      </div>
+      <div class="log-filter-bar">
+        <div class="filter-chips" id="logChips">
+          <button class="chip on" data-type="all">全部</button>
+          <button class="chip" data-type="tx">TX</button>
+          <button class="chip" data-type="rx">RX</button>
+        </div>
+        <div class="search-box">
+          <span class="search-ico" data-icon="search"></span>
+          <input type="text" id="logSearch" placeholder="过滤终端内容（Ctrl+F 聚焦）">
+        </div>
+      </div>
+      <div class="sig-panel" id="sigPanel" hidden>
+        <div class="sig-head">
+          <span class="sig-ico" data-icon="activity"></span>
+          <span class="sig-title">RSSI 趋势</span>
+          <span class="sig-value" id="sigValue">--</span>
+          <span class="sig-value snr" id="sigSnr" hidden>--</span>
+          <span class="sig-stat" id="sigStat">min -- / max --</span>
+          <span class="sig-hint" id="sigHint">每 2 秒采样 · 蓝刻度=TX 绿刻度=RX</span>
+        </div>
+        <canvas id="sigCanvas" width="860" height="64"></canvas>
+      </div>
+      <div class="terminal" id="terminal"></div>
+      <div class="bulk-panel" id="bulkPanel" hidden>
+        <div class="bulk-head">
+          <span class="nav-ico" data-icon="list-checks"></span>
+          <b>批量发送</b>
+          <span class="hint"># 开头为注释；WAIT 3 表示等待 3 秒（可直接回放导出的 .at.txt 脚本）</span>
+        </div>
+        <textarea id="bulkText" rows="6" spellcheck="false"
+          placeholder="AT&#10;AT+CGMR?&#10;# 注释行会跳过&#10;WAIT 2&#10;AT+CS"></textarea>
+        <div class="bulk-opts">
+          <label>行间隔 <input type="number" id="bulkDelay" value="300" min="0" step="50" class="mini-input"> ms</label>
+          <label class="switch"><input type="checkbox" id="bulkStopErr" checked><span>失败即停</span></label>
+          <button class="ghost-btn" id="btnBulkRun"><span data-icon="play"></span>开始发送</button>
+          <button class="ghost-btn danger" id="btnBulkStop" disabled><span data-icon="square"></span>停止</button>
+        </div>
+        <div class="bulk-prog" id="bulkProg" hidden>
+          <div class="progress-track"><div class="progress-fill" id="bulkFill"></div></div>
+          <span class="hint mono" id="bulkProgText"></span>
+        </div>
+      </div>
+      <div class="send-bar">
+        <select id="sendMode" class="mini-select">
+          <option value="text">文本</option>
+          <option value="hex">HEX</option>
+        </select>
+        <label class="switch" id="appendCrlfWrap" title="勾选后文本发送会自动追加 CRLF（AT 指令一般需要），取消则裸发">
+          <input type="checkbox" id="chkAppendCRLF" checked>
+          <span>加回车换行</span>
+        </label>
+        <div class="send-input-wrap">
+          <textarea id="cmdInput" rows="1" placeholder="输入 AT 指令，Ctrl+Enter 发送（↑↓ 历史 / AT+ 自动补全）"></textarea>
+          <div class="ac-box" id="acBox" hidden></div>
+        </div>
+        <button class="ghost-btn" id="btnFavAdd" title="收藏当前输入的指令">
+          <span data-icon="star"></span></button>
+        <button class="ghost-btn" id="btnFavList" title="指令收藏夹">
+          <span data-icon="bookmarks"></span></button>
+        <button class="primary-btn" id="btnSend" title="Ctrl+Enter / 点击发送">发送</button>
+      </div>
+      <div class="hint-row">
+        <span>提示：模组回显已自动过滤；发送 HEX 时直接写十六进制串。响应命中错误码时会自动标红并提示原因。</span>
+      </div>
+    </section>
+
+
+    <section class="page" id="page-logs">
+      <div class="page-head">
+        <h1>程序日志</h1>
+        <p class="page-sub">程序日志：连接事件、配置切换、任务进度与错误（串口收发 TX/RX 不在此页，见「串口终端」）</p>
+        <div class="head-actions">
+          <button class="ghost-btn" id="btnLogFiles2">日志文件</button>
+          <button class="ghost-btn" id="btnExportLog2">导出日志</button>
+          <button class="ghost-btn danger" id="btnClearLog2">清空</button>
+        </div>
+      </div>
+      <div class="log-filter-bar">
+        <div class="filter-chips" id="logChips2">
+          <button class="chip on" data-type="all">全部</button>
+          <button class="chip" data-type="sys">SYS</button>
+          <button class="chip" data-type="err">错误</button>
+          <button class="chip" data-type="mark">标记</button>
+        </div>
+        <div class="search-box">
+          <span class="search-ico" data-icon="search"></span>
+          <input type="text" id="logSearch2" placeholder="过滤日志内容">
+        </div>
+      </div>
+      <div class="terminal" id="logAll"></div>
+      <div class="log-statbar" id="logStatbar">
+        <span class="st-chip tx">TX <b id="stTx">0</b></span>
+        <span class="st-chip rx">RX <b id="stRx">0</b></span>
+        <span class="st-chip sys">SYS <b id="stSys">0</b></span>
+        <span class="st-chip err">错误 <b id="stErr">0</b></span>
+        <span class="st-chip mark">标记 <b id="stMark">0</b></span>
+        <span class="st-chip total">共 <b id="stTotal">0</b> 行</span>
+      </div>
+    </section>
+
+
+    <section class="page" id="page-errcodes">
+      <div class="page-head">
+        <h1>错误码库</h1>
+        <p class="page-sub" id="errCount">共 0 个错误码 / 事件</p>
+        <div class="head-actions">
+          <button class="ghost-btn" id="btnErrSource" title="错误码库跟随当前配置集切换">来源：--</button>
+          <button class="ghost-btn" id="btnErrAdd" title="向当前配置集的错误码库新增条目">
+            <span data-icon="plus"></span>新增</button>
+          <button class="ghost-btn" id="btnErrReset" title="删除本配置集的自定义错误码库，还原为固件风格默认">
+            <span data-icon="reset"></span>还原默认</button>
+        </div>
+      </div>
+      <div class="toolbar">
+        <div class="search-box">
+          <span class="search-ico" data-icon="search"></span>
+          <input type="text" id="errSearch" placeholder="搜索错误码 / 含义 / 处置建议">
+        </div>
+      </div>
+      <div class="err-list" id="errList"></div>
+    </section>
+
+
+    <section class="page" id="page-settings">
+      <div class="page-head">
+        <h1 data-i18n="set.title">设置</h1>
+        <p class="page-sub" data-i18n="set.sub">串口参数、界面偏好与行为开关</p>
+      </div>
+      <div class="set-tabs" id="setTabs">
+        <button class="set-tab active" data-tab="conn">串口与协议</button>
+        <button class="set-tab" data-tab="ui">界面与行为</button>
+        <button class="set-tab" data-tab="profile">配置集（OEM）</button>
+        <button class="set-tab" data-tab="data">数据与窗口</button>
+      </div>
+      <div class="set-page active" data-tabpage="conn">
+      <div class="two-col">
+        <div class="panel">
+          <div class="panel-head"><h3 data-i18n="set.serial">串口参数</h3></div>
+          <div class="form-grid" id="formSerial"></div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><h3 data-i18n="set.protocol">协议参数</h3></div>
+          <div class="form-grid" id="formProtocol"></div>
+        </div>
+      </div>
+      </div>
+      <div class="set-page" data-tabpage="ui">
+      <div class="two-col">
+        <div class="panel">
+          <div class="panel-head"><h3 data-i18n="set.ui">界面</h3></div>
+          <div class="form-grid" id="formUI"></div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><h3 data-i18n="set.behavior">行为</h3></div>
+          <div class="form-grid" id="formBehavior"></div>
+        </div>
+      </div>
+      </div>
+      <div class="set-page" data-tabpage="profile">
+      <div class="panel">
+        <div class="panel-head">
+          <h3>配置集（OEM）</h3>
+          <span class="cmd-cat" id="profileCount">-</span>
+        </div>
+        <p class="small" style="margin:0 0 10px;color:var(--text-dim)">
+          配置集决定本应用的全部内容：品牌名、指令库、一键配置场景、测试套件与默认按钮。
+          换一个配置集，整个应用就变成另一款模组的专用上位机。
+        </p>
+        <div class="form-grid">
+          <div class="field">
+            <label>当前配置集</label>
+            <select class="sel" id="setSelProfile"></select>
+            <span class="hint" id="setProfileHint"></span>
+          </div>
+          <div class="field">
+            <label>允许编辑配置集</label>
+            <label class="switch"><input type="checkbox" id="chkEditMode">
+              <span>开启后可新增 / 修改 / 删除指令、场景与套件</span></label>
+            <span class="hint">关闭后，全站的「+ 新建 / 编辑 / 删除」按钮都会隐藏</span>
+          </div>
+        </div>
+        <div class="row-actions" style="margin-top:10px">
+          <button class="ghost-btn" id="btnProfileNew">新建配置集</button>
+          <button class="ghost-btn" id="btnProfileDup">复制当前</button>
+          <button class="ghost-btn" id="btnProfileImport">导入 JSON</button>
+          <button class="ghost-btn" id="btnProfileExport">导出当前</button>
+          <button class="ghost-btn" id="btnProfileDir">打开配置目录</button>
+          <button class="ghost-btn danger" id="btnProfileDel">删除当前</button>
+        </div>
+        <div class="mono small" id="profileDirText" style="margin-top:8px"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h3>配置集信息（OEM 元信息）</h3>
+          <span class="cmd-cat">版本 / 作者 / 发布时间 / 网址 / 介绍</span></div>
+        <p class="small" style="margin:0 0 10px;color:var(--text-dim)">
+          这些信息会出现在首页介绍下方与「关于」页，便于标注当前配置集的来源与归属。
+        </p>
+        <div class="form-grid">
+          <div class="field"><label>版本号</label>
+            <input class="inp" id="metaVersion" placeholder="例如 1.0.0"></div>
+          <div class="field"><label>作者 / 厂商</label>
+            <input class="inp" id="metaAuthor" placeholder="例如 Acme IoT"></div>
+          <div class="field"><label>发布时间</label>
+            <input class="inp" id="metaDate" placeholder="例如 2026-03-01"></div>
+          <div class="field"><label>官方网址</label>
+            <input class="inp" id="metaWebsite" placeholder="https://..."></div>
+          <div class="field field-wide"><label>介绍</label>
+            <textarea class="inp" id="metaIntro" rows="3"
+              placeholder="一句话描述本配置集适配的模组与用途"></textarea></div>
+        </div>
+        <div class="row-actions" style="margin-top:8px">
+          <button class="primary-btn" id="btnSaveMeta">保存元信息</button>
+        </div>
+      </div>
+      </div>
+      <div class="set-page" data-tabpage="data">
+      <div class="panel">
+        <div class="panel-head"><h3 data-i18n="set.window">窗口</h3></div>
+        <div class="row-actions">
+          <button class="ghost-btn" id="btnWinSmall">小窗 1080 × 700</button>
+          <button class="ghost-btn" id="btnWinDefault">默认 1120 × 720</button>
+          <button class="ghost-btn" id="btnWinLarge">大窗 1400 × 880</button>
+          <button class="ghost-btn" id="btnWinMax">最大化</button>
+        </div>
+        <p class="small" style="margin:6px 0 0;color:var(--text-faint)">
+          也可以直接用鼠标拖动窗口任意边缘或四角来调整大小；双击标题栏可最大化/还原。
+        </p>
+        <div class="mono small" id="winSizeText" style="margin-top:6px"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h3 data-i18n="set.data">数据与诊断</h3></div>
+        <div class="row-actions">
+          <button class="ghost-btn" id="btnOpenData">打开数据目录</button>
+          <button class="ghost-btn" id="btnOpenLogs">打开日志目录</button>
+          <button class="ghost-btn" id="btnSelfTest">运行自检</button>
+          <button class="ghost-btn danger" id="btnResetCfg">恢复默认设置</button>
+        </div>
+        <div class="mono small" id="dataDirText"></div>
+        <div id="selftestBox" class="selftest" hidden></div>
+      </div>
+      </div>
+    </section>
+
+
+    <section class="page" id="page-about">
+      <div class="page-head">
+        <h1 data-i18n="about.title">关于</h1>
+        <p class="page-sub" id="aboutSub">AT指令调试台 · 跨平台 AT 指令测试上位机</p>
+      </div>
+      <div class="about-card">
+        <div class="about-logo">
+          <svg viewBox="0 0 48 48" width="56" height="56" aria-hidden="true">
+            <path d="M10 34 L20 14 L28 26 L38 12" fill="none" stroke="currentColor"
+                  stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="38" cy="12" r="3.6" fill="currentColor"/>
+          </svg>
+        </div>
+        <div class="about-info" id="aboutInfo"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h3>功能一览</h3></div>
+        <ul class="feature-list" id="aboutFeatures"></ul>
+      </div>
+    </section>
+  </main>
+</div>
+
+<footer class="statusbar">
+  <span class="sb-item" id="sbPort">未连接</span>
+  <span class="sb-sep"></span>
+  <span class="sb-item" id="sbBaud">9600</span>
+  <span class="sb-sep"></span>
+  <span class="sb-item mono" id="sbUptime" hidden></span>
+  <span class="sb-sep" id="sbUptimeSep" hidden></span>
+  <span class="sb-item" id="sbPlatform">-</span>
+  <span class="sb-sep"></span>
+  <span class="sb-item mono" id="sbBytes" title="点击清零收发计数">↑0 ↓0 B</span>
+  <span class="sb-grow"></span>
+  <span class="sb-item mono" id="sbDataDir"></span>
+  <span class="sb-sep"></span>
+  <span class="sb-item" id="sbVersion">v1.0.0</span>
+</footer>
+
+<div class="log-dock" id="logDock">
+  <div class="dock-panel" id="dockPanel" hidden>
+    <div class="dock-head">
+      <span class="dock-title">最近串口日志</span>
+      <span class="dock-count" id="dockCount">0 条</span>
+      <span class="spacer"></span>
+      <button class="ghost-btn" id="dockGotoTerm">去终端</button>
+      <button class="ghost-btn" id="dockExport">导出</button>
+      <button class="ghost-btn danger" id="dockClear">清空</button>
+      <button class="ghost-btn" id="dockCollapse">收起</button>
+    </div>
+    <div class="dock-list" id="dockList"></div>
+  </div>
+  <button class="dock-bar" id="dockBar" title="点击展开最近串口日志">
+    <span class="dock-ico" data-icon="terminal"></span>
+    <span class="dock-latest" id="dockLatest">暂无串口日志</span>
+    <span class="dock-caret" id="dockCaret">展开</span>
+  </button>
+</div>
+
+<div class="modal-layer" id="modalLayer" hidden>
+  <div class="modal-backdrop" id="modalBackdrop"></div>
+  <div class="modal" id="modal">
+    <div class="modal-head"><h3 id="modalTitle">标题</h3>
+      <button class="icon-btn" id="modalClose">✕</button></div>
+    <div class="modal-body" id="modalBody"></div>
+    <div class="modal-foot" id="modalFoot"></div>
+  </div>
+</div>
+
+<div class="toast-layer" id="toastLayer"></div>
+
+<div class="resize-layer" id="resizeLayer" hidden>
+  <div class="rsz rsz-n"  data-dir="n"></div>
+  <div class="rsz rsz-s"  data-dir="s"></div>
+  <div class="rsz rsz-w"  data-dir="w"></div>
+  <div class="rsz rsz-e"  data-dir="e"></div>
+  <div class="rsz rsz-nw" data-dir="nw"></div>
+  <div class="rsz rsz-ne" data-dir="ne"></div>
+  <div class="rsz rsz-sw" data-dir="sw"></div>
+  <div class="rsz rsz-se" data-dir="se"></div>
+</div>
+
+<div class="size-hud" id="sizeHud" hidden><span id="sizeHudText">1120 × 720</span></div>
+
+<script src="js/lucide-icons.js"></script>
+<script src="js/lucide.min.js"></script>
+<script src="js/icons.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
