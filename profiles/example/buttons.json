@@ -1,0 +1,130 @@
+{
+  "profile": "example",
+  "buttons": [
+    {
+      "id": "btn-builtin-at",
+      "name": "链路自检",
+      "icon": "terminal",
+      "color": "blue",
+      "group": "常用",
+      "commands": [
+        "AT"
+      ],
+      "delay": 0.3,
+      "note": "确认 AT 链路可用",
+      "builtin": true,
+      "enabled": true,
+      "created_at": 0,
+      "updated_at": 0,
+      "order": 0
+    },
+    {
+      "id": "btn-builtin-ver",
+      "name": "版本与电量",
+      "icon": "info",
+      "color": "teal",
+      "group": "常用",
+      "commands": [
+        "AT+VER=?",
+        "AT+BAT=?"
+      ],
+      "delay": 0.3,
+      "note": "固件版本 + 电池电压",
+      "builtin": true,
+      "enabled": true,
+      "created_at": 0,
+      "updated_at": 0,
+      "order": 1
+    },
+    {
+      "id": "btn-builtin-otaa",
+      "name": "OTAA 入网",
+      "icon": "radio-tower",
+      "color": "violet",
+      "group": "常用",
+      "commands": [
+        "AT+JOIN=1"
+      ],
+      "delay": 0.5,
+      "note": "等待 +EVT:JOINED",
+      "builtin": true,
+      "enabled": true,
+      "created_at": 0,
+      "updated_at": 0,
+      "order": 2
+    },
+    {
+      "id": "btn-builtin-send",
+      "name": "发送 Hello",
+      "icon": "send",
+      "color": "amber",
+      "group": "常用",
+      "commands": [
+        "AT+SEND=10:0:68656C6C6F"
+      ],
+      "delay": 0.5,
+      "note": "port 10 · unconfirmed",
+      "builtin": true,
+      "enabled": true,
+      "created_at": 0,
+      "updated_at": 0,
+      "order": 3
+    },
+    {
+      "id": "btn-builtin-save",
+      "name": "保存上下文",
+      "icon": "database",
+      "color": "green",
+      "group": "常用",
+      "commands": [
+        "AT+CS"
+      ],
+      "delay": 0.5,
+      "note": "写入 NVM",
+      "builtin": true,
+      "enabled": true,
+      "created_at": 0,
+      "updated_at": 0,
+      "order": 4
+    },
+    {
+      "id": "btn-builtin-reboot",
+      "name": "重启模组",
+      "icon": "rotate-cw",
+      "color": "red",
+      "group": "危险",
+      "commands": [
+        "ATZ"
+      ],
+      "delay": 1.5,
+      "note": "NVIC 复位",
+      "builtin": true,
+      "enabled": true,
+      "created_at": 0,
+      "updated_at": 0,
+      "order": 5
+    },
+    {
+      "id": "btn-custom-report",
+      "name": "一键出体检报告",
+      "icon": "clipboard-check",
+      "color": "blue",
+      "group": "自定义示例",
+      "commands": [
+        "AT+VER=?",
+        "AT+BAT=?",
+        "AT+DEUI=?",
+        "AT+BAND=?",
+        "AT+CLASS=?",
+        "AT+ADR=?"
+      ],
+      "delay": 0.4,
+      "note": "自定义按钮示例：连续读取并生成报告（可在按钮页编辑/删除）",
+      "builtin": false,
+      "enabled": true,
+      "created_at": 0,
+      "updated_at": 0,
+      "order": 6
+    }
+  ]
+}
