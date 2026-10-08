@@ -41,7 +41,7 @@ def _dpi_aware() -> None:
 
 
 def _acquire_single_instance():
-    lock_path = paths.user_dir() / "app.lock"
+    lock_path = paths.runtime_dir() / "app.lock"
     try:
         lock_path.parent.mkdir(parents=True, exist_ok=True)
         fh = open(lock_path, "w", encoding="utf-8")
@@ -228,8 +228,17 @@ def main(argv: list[str] | None = None) -> int:
             log.warning("原生窗口拖动不可用：%s", exc)
         if win_cfg.get("maximized"):
             try:
-                window.maximize()
-                api._maximized = True
+                from ..core import winnative
+                geo = winnative.logical_geometry(window)
+                if geo:
+                    api._restore_rect = geo
+                wa = winnative.work_area_physical(window)
+                if wa and winnative.set_rect_physical(
+                        window, wa["x"], wa["y"], wa["width"], wa["height"]):
+                    api._maximized = True
+                else:
+                    window.maximize()
+                    api._maximized = True
             except Exception:
                 pass
 

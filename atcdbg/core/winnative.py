@@ -114,6 +114,60 @@ def logical_geometry(window) -> dict | None:
     except Exception:
         return None
 
+def work_area_physical(window) -> dict | None:
+    """Monitor work area (excludes the taskbar) in *physical* pixels — the same
+    coordinate space as GetWindowRect / SetWindowPos. A borderless (frameless)
+    window that is OS-maximized fills the whole monitor including the taskbar,
+    so we size it to the work area instead to keep the taskbar visible."""
+    hwnd = _hwnd(window)
+    if not hwnd:
+        return None
+    u32 = _u32()
+    try:
+        _bind(u32.MonitorFromWindow,
+              [ctypes.c_void_p, ctypes.c_uint], ctypes.c_void_p)
+        _bind(u32.GetMonitorInfoW,
+              [ctypes.c_void_p, ctypes.c_void_p], ctypes.c_int)
+    except Exception:
+        pass
+    try:
+        class MONITORINFO(ctypes.Structure):
+            _fields_ = [("cbSize", ctypes.c_ulong),
+                        ("rcMonitor", ctypes.c_int * 4),
+                        ("rcWork", ctypes.c_int * 4),
+                        ("dwFlags", ctypes.c_ulong)]
+        hmon = u32.MonitorFromWindow(hwnd, 2)  # MONITOR_DEFAULTTONEAREST
+        if not hmon:
+            return None
+        mi = MONITORINFO()
+        mi.cbSize = ctypes.sizeof(MONITORINFO)
+        if not u32.GetMonitorInfoW(hmon, ctypes.byref(mi)):
+            return None
+        rl, rt, rr_, rb = mi.rcWork
+        return {"x": int(rl), "y": int(rt),
+                "width": int(rr_ - rl), "height": int(rb - rt)}
+    except Exception:
+        return None
+
+def set_rect_physical(window, x: int, y: int, w: int, h: int) -> bool:
+    """Set the window bounds in physical pixels (same space as work_area_physical)."""
+    hwnd = _hwnd(window)
+    if not hwnd:
+        return False
+    u32 = _u32()
+    try:
+        _bind(u32.SetWindowPos,
+              [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_int, ctypes.c_int,
+               ctypes.c_int, ctypes.c_int, ctypes.c_uint], ctypes.c_int)
+    except Exception:
+        pass
+    try:
+        flags = 0x0004 | 0x0010  # SWP_NOZORDER | SWP_NOACTIVATE
+        return bool(u32.SetWindowPos(hwnd, 0, int(x), int(y),
+                                    int(w), int(h), flags))
+    except Exception:
+        return False
+
 def drag_loop(target, timeout: float = 60.0, interval: float = 0.008) -> bool:
     """Frame-based move: track the cursor and reposition the window until the
     left button is released. The modal DefWindowProc move loop
