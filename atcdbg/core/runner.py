@@ -44,7 +44,7 @@ class Runner:
                                   P.line_ending(line_ending))
         else:
             le = P.line_ending(proto.get("line_ending", "CRLF"))
-        timeout = timeout or float(proto.get("read_timeout", 3.0))
+        timeout = timeout or float(proto.get("read_timeout", 5.0))
         strip_echo = bool(proto.get("strip_echo", True))
         if no_status:
             timeout = max(timeout, 2.0)

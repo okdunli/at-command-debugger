@@ -136,12 +136,18 @@ def build_steps(preset_id: str, params: dict | None = None) -> list[dict]:
         if not cmd:
             continue
         label = interpolate(raw.get("label", ""), merged) or cmd
-        steps.append({
+        step = {
             "cmd": cmd,
             "label": label,
             "delay": float(raw.get("delay") or 0.3),
             "wait_event": float(raw.get("wait_event") or 0),
             "expect": str(raw.get("expect", "OK") or ""),
             "note": interpolate(raw.get("note", ""), merged),
-        })
+        }
+        # 透传可选字段：步骤级超时 / 无状态判定
+        if raw.get("timeout"):
+            step["timeout"] = float(raw["timeout"])
+        if raw.get("no_status"):
+            step["no_status"] = True
+        steps.append(step)
     return steps
