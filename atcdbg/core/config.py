@@ -27,7 +27,7 @@ DEFAULTS: dict[str, Any] = {
         "line_ending": "CRLF",   # CRLF | CR | LF
         "send_mode": "text",     # text | hex
         "command_delay": 0.35,
-        "read_timeout": 3.0,
+        "read_timeout": 5.0,
         "strip_echo": True,
         "wait_event": True,
     },
@@ -108,12 +108,32 @@ class AppConfig:
             self.save()
         return self._data
 
+    def ensure_defaults(self) -> None:
+        """初始化补全：把深合并默认值后的完整配置落盘。
+
+        首次运行（config.json 不存在）直接生成完整配置文件；
+        已有文件缺项时补齐缺失键（不覆盖用户已设置的值）；
+        内容完全一致则跳过写入，避免每次启动都产生备份文件。
+        """
+        try:
+            if self._store.data != self._data:
+                self.save()
+        except Exception:
+            pass
+
     def save(self) -> bool:
         return self._store.update(self._data, autosave=False) or self._store.save()
 
     def reload(self) -> dict:
         self._store.reload()
         raw = self._store.data if isinstance(self._store.data, dict) else {}
+        # 迁移：旧默认读超时 3.0 对慢指令（配网/入网/扫描）太短，升到 5.0
+        try:
+            proto = raw.get("protocol")
+            if isinstance(proto, dict) and float(proto.get("read_timeout", 0)) == 3.0:
+                proto["read_timeout"] = 5.0
+        except (TypeError, ValueError):
+            pass
         self._data = _deep_merge(DEFAULTS, raw)
         return self._data
 
