@@ -7,3 +7,12 @@ exports/
 *.log
 Thumbs.db
 .DS_Store
+
+# 软件配置（运行时可改，不随配置集提交）
+profiles/config.json
+profiles/probe.txt
+profiles-*/
+
+# 运行时数据（与配置集 profiles/ 分离，统一放仓库根 data/，均不提交）
+data/
+data-*/
