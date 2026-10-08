@@ -126,6 +126,7 @@
       <div class="page-head">
         <h1 data-i18n="dash.title">仪表盘</h1>
         <p class="page-sub" data-i18n="dash.sub">连接模组后即可开始一键配置与测试</p>
+        <div class="http-chip" id="httpChip" hidden></div>
       </div>
       <div class="stat-row" id="statRow"></div>
       <div class="panel">
@@ -136,7 +137,6 @@
         <div class="quick-grid" id="quickGrid"></div>
       </div>
       <p class="profile-intro" id="profileIntro"></p>
-      <div class="http-chip" id="httpChip" hidden></div>
       <div class="panel" id="lastResultPanel" hidden>
         <div class="panel-head">
           <h3 data-i18n="dash.last">最近一次执行结果</h3>
@@ -347,7 +347,7 @@
         <button class="ghost-btn" id="btnFavAdd" title="收藏当前输入的指令">
           <span data-icon="star"></span></button>
         <button class="ghost-btn" id="btnFavList" title="指令收藏夹">
-          <span data-icon="bookmarks"></span></button>
+          <span data-icon="bookmark"></span></button>
         <button class="primary-btn" id="btnSend" title="Ctrl+Enter / 点击发送">发送</button>
       </div>
       <div class="hint-row">
@@ -463,7 +463,7 @@
             <select class="sel" id="setSelProfile"></select>
             <span class="hint" id="setProfileHint"></span>
           </div>
-          <div class="field">
+          <div class="field" style="grid-column:1/-1">
             <label>允许编辑配置集</label>
             <label class="switch"><input type="checkbox" id="chkEditMode">
               <span>开启后可新增 / 修改 / 删除指令、场景与套件</span></label>
@@ -616,6 +616,12 @@
 </div>
 
 <div class="size-hud" id="sizeHud" hidden><span id="sizeHudText">1120 × 720</span></div>
+
+<div class="loop-banner" id="loopBanner" hidden>
+  <span class="lb-dot"></span>
+  <span class="lb-text">循环发送进行中…</span>
+  <button class="lb-stop" id="btnLoopStop">停止循环发送</button>
+</div>
 
 <script src="js/lucide-icons.js"></script>
 <script src="js/lucide.min.js"></script>
