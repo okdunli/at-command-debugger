@@ -185,33 +185,67 @@ def _default_codes(style: str) -> list[dict]:
 def _rebuild(codes: list[dict]) -> None:
     global _BY_CODE, _PATTERNS
     CODES[:] = codes
-    _BY_CODE = {c["code"].upper(): c for c in CODES}
-    _PATTERNS = sorted(CODES, key=lambda c: -len(c["code"]))
+    _BY_CODE = {c["code"].upper(): c for c in CODES if not c.get("pattern")}
+    _PATTERNS = sorted(CODES, key=lambda c: -len(c.get("pattern") or c["code"]))
 
 def _load_custom(profile_id: str) -> list[dict] | None:
+    candidates: list = []
     try:
-        path = paths.errorcodes_file(profile_id)
-        if path.exists():
-            data = json.loads(path.read_text(encoding="utf-8"))
-            codes = data.get("codes") if isinstance(data, dict) else data
-            if isinstance(codes, list) and codes:
-                return [dict(c) for c in codes
-                        if isinstance(c, dict) and c.get("code")]
+        candidates.append(paths.errorcodes_file(profile_id))
+    except Exception:
+        pass
+    # 允许内置（仓库内）配置集携带自己的错误码库，而不只限于 user_dir
+    try:
+        candidates.append(paths.builtin_profiles_dir()
+                          / (profile_id or "") / "errorcodes.json")
+    except Exception:
+        pass
+    for path in candidates:
+        try:
+            if path.exists():
+                data = json.loads(path.read_text(encoding="utf-8"))
+                codes = data.get("codes") if isinstance(data, dict) else data
+                if isinstance(codes, list) and codes:
+                    return [dict(c) for c in codes
+                            if isinstance(c, dict) and c.get("code")]
+        except Exception:
+            continue
+    return None
+
+def _profile_builtin_codes(profile_id: str) -> list[dict] | None:
+    """读取 profile.json 内置的 error_codes（供重置时回退）。"""
+    try:
+        from . import profiles
+        codes = profiles.load(profile_id).get("error_codes")
+        if isinstance(codes, list) and codes:
+            return [dict(c) for c in codes
+                    if isinstance(c, dict) and c.get("code")]
     except Exception:
         pass
     return None
 
-def set_active(profile_id: str, style: str = "an5481") -> None:
+def set_active(profile_id: str = "", style: str = "an5481", codes=None) -> None:
     global _ACTIVE_PROFILE, _ACTIVE_STYLE, _ACTIVE_SOURCE
     _ACTIVE_PROFILE = profile_id or ""
     _ACTIVE_STYLE = style or "an5481"
-    custom = _load_custom(_ACTIVE_PROFILE) if _ACTIVE_PROFILE else None
-    if custom is not None:
+    # 优先级：用户保存的侧车 errorcodes.json（自定义）> profile 内置 error_codes > 风格默认集
+    sidecar = _load_custom(_ACTIVE_PROFILE) if _ACTIVE_PROFILE else None
+    if sidecar is not None:
         _ACTIVE_SOURCE = "custom"
-        _rebuild(custom)
-    else:
-        _ACTIVE_SOURCE = "default"
-        _rebuild(_default_codes(_ACTIVE_STYLE))
+        _rebuild(sidecar)
+        return
+    # 调用方未显式传 codes 时，自动回退到 profile 内置错误码库
+    if codes is None and _ACTIVE_PROFILE:
+        codes = _profile_builtin_codes(_ACTIVE_PROFILE)
+    if isinstance(codes, list) and codes:
+        custom = [dict(c) for c in codes
+                  if isinstance(c, dict) and c.get("code")]
+        if custom:
+            _ACTIVE_SOURCE = "profile"
+            _rebuild(custom)
+            return
+    _ACTIVE_SOURCE = "default"
+    _rebuild(_default_codes(_ACTIVE_STYLE))
 
 def active_info() -> dict:
     return {
@@ -240,6 +274,8 @@ def save_active(codes: list[dict]) -> dict:
         }
         if c.get("alias"):
             entry["alias"] = str(c["alias"])
+        if c.get("pattern"):
+            entry["pattern"] = str(c["pattern"])
         clean.append(entry)
     if not clean:
         return {"ok": False, "error": "错误码表为空或格式不合法"}
@@ -258,7 +294,9 @@ def reset_active() -> dict:
             path.unlink()
     except OSError as exc:
         return {"ok": False, "error": str(exc)}
-    set_active(_ACTIVE_PROFILE, _ACTIVE_STYLE)
+    # 重置后回到 profile 内置错误码库（而非风格默认集）
+    set_active(_ACTIVE_PROFILE, _ACTIVE_STYLE,
+               _profile_builtin_codes(_ACTIVE_PROFILE))
     return {"ok": True, "info": active_info()}
 
 def get(code: str) -> dict | None:
@@ -279,7 +317,17 @@ def scan(text: str) -> list[dict]:
     upper = text.upper()
     for entry in _PATTERNS:
         code = entry["code"].upper()
-        if code in upper and code not in seen:
+        if code in seen:
+            continue
+        pat = entry.get("pattern")
+        if pat:
+            try:
+                if re.search(pat, upper):
+                    seen.add(code)
+                    hits.append(dict(entry))
+            except re.error:
+                continue
+        elif code in upper:
             seen.add(code)
             hits.append(dict(entry))
     return hits

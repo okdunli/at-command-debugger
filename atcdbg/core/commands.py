@@ -98,10 +98,16 @@ def build(cmd_id: str, value: str | None = None, query: bool = False,
     cmd = COMMAND_MAP.get(cmd_id)
     if cmd is None:
         return cmd_id
+    # 查询/帮助操作符按协议风格区分：
+    #   aithinker（安信可 combo/Ra-08/ESP-AT/TG 等）：查询为 "?"，帮助为 "=?"
+    #   an5481（STM32CubeWL AT）：查询用户设置为 "=?"，帮助为 "?"
+    aithinker = P.get_style() == "aithinker"
     if help_:
-        return f"{cmd_id}?"
+        op = "=?" if aithinker else "?"
+        return f"{cmd_id}{op}"
     if query:
-        return f"{cmd_id}=?"
+        op = "?" if aithinker else "=?"
+        return f"{cmd_id}{op}"
     if value not in (None, ""):
         return f"{cmd_id}={value}"
     return cmd_id

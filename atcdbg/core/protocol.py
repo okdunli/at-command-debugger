@@ -25,9 +25,13 @@ EVENT_JOIN_FAILED = "+EVT:JOIN FAILED"
 
 STYLE = "an5481"
 
-AI_STATUS_EXACT = ("OK", "ERROR")
+AI_STATUS_EXACT = ("OK", "ERROR", "+ERROR")
 AI_STATUS_PREFIX = ("+CME ERROR", "OK+SEND", "ERR+SEND")
-AI_EVENT_PREFIX = ("+CJOIN:", "+CLINKCHECK:", "OK+SENT", "OK+RECV", "ERR+SENT")
+AI_EVENT_PREFIX = ("+CJOIN:", "+CLINKCHECK:", "OK+SENT", "OK+RECV", "ERR+SENT",
+                   "+EVENT:", "+DATA:", "+BLUFIDATA:")
+
+# Combo 系错误响应行：+<CMD>:<errno>（纯数字尾缀），如 +MQTTSUB:199
+_AI_ERRNO_RE = re.compile(r"^\+[A-Z][A-Z0-9]*:\d+$")
 
 def set_style(style: str) -> None:
     global STYLE
@@ -56,7 +60,9 @@ def is_status(line: str) -> bool:
 def is_error(line: str) -> bool:
     text = line.strip()
     if STYLE == "aithinker":
-        if text == "ERROR" or text.startswith("+CME ERROR"):
+        if text == "ERROR" or text.startswith("+CME ERROR") or text == "+ERROR":
+            return True
+        if _AI_ERRNO_RE.match(text):
             return True
         return text.startswith("ERR+")
     return text in STATUS_ERRORS
