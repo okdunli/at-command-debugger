@@ -53,12 +53,8 @@ def builtin_dir() -> Path:
 
 
 def user_profiles_dir() -> Path:
-    path = paths.user_dir() / "profiles"
-    try:
-        path.mkdir(parents=True, exist_ok=True)
-    except OSError:
-        pass
-    return path
+    # 数据跟随仓库：用户配置集直接放 profiles/ 根（与内置配置集同层）
+    return paths.user_dir()
 
 
 def profile_dir(profile_id: str, writable: bool = False) -> Path:
@@ -122,12 +118,24 @@ def _scan(base: Path) -> list[Path]:
         return []
 
 
+def _is_untouched_seed(meta: dict) -> bool:
+    """首次运行播种的空白默认配置：无指令/预设/套件内容且从未被用户改过。"""
+    return (meta.get("id") == "default"
+            and meta.get("source") == "user"
+            and not meta.get("command_count")
+            and not meta.get("preset_count")
+            and not meta.get("suite_count"))
+
+
 def list_profiles() -> list[dict]:
     found: dict[str, dict] = {}
     for base in (builtin_dir(), user_profiles_dir()):
         for child in _scan(base):
             found[child.name] = _meta(child.name, child)
     items = list(found.values())
+    # 存在其他配置集时隐藏空白的种子默认配置（没啥用，只会干扰选择）
+    if len(items) > 1:
+        items = [m for m in items if not _is_untouched_seed(m)]
     items.sort(key=lambda m: (m["id"] != DEFAULT_PROFILE_ID, m["name"]))
     return items
 
@@ -235,28 +243,53 @@ def import_package(package: dict | str, override_id: str = "") -> dict:
 
 
 def seed_builtin() -> None:
-    base = builtin_dir()
-    if base.exists():
-        try:
-            for child in base.iterdir():
-                if child.is_dir() and (child / PROFILE_FILE).exists():
-                    return
-        except OSError:
-            pass
-    else:
-        try:
-            base.mkdir(parents=True, exist_ok=True)
-        except OSError:
-            pass
+    """程序初始化：保证用户 profiles 目录里至少有一套可用配置集。
 
-
-    if _scan(user_profiles_dir()):
+    - 用户目录已有任何配置集：不做任何事（尊重用户的删除/修改，不复活）。
+    - 内置目录（打包资源 / 仓库 profiles/）与用户目录不同时：
+      把内置配置集整体复制到用户目录——首次运行即得到含 example 的全套。
+    - 连内置资源都没有：用 MINIMAL 兜底生成一个带基础指令的 example。
+    """
+    user_base = user_profiles_dir()
+    if _scan(user_base):
         return
-    fallback_id = "default"
+    src = builtin_dir()
+    copied = False
+    if src != user_base:
+        for child in _scan(src):
+            try:
+                shutil.copytree(child, user_base / child.name,
+                                dirs_exist_ok=True)
+                copied = True
+            except OSError:
+                continue
+    if copied:
+        return
     data = json.loads(json.dumps(MINIMAL, ensure_ascii=False))
-    data.update(id=fallback_id, name="默认配置", brand="AT指令调试台",
-                subtitle="请导入或新建一个配置集")
+    data.update(
+        id="example", name="示例配置", brand="AT指令调试台",
+        subtitle="跨平台 AT 指令测试上位机",
+        author="AT指令调试台",
+        website="https://github.com/okdunli/at-command-debugger",
+        release_date=time.strftime("%Y-%m-%d"),
+        commands=json.loads(json.dumps(_BASIC_EXAMPLE_COMMANDS,
+                                       ensure_ascii=False)),
+    )
     try:
-        save(fallback_id, data)
+        save("example", data)
     except OSError:
         pass
+
+
+_BASIC_EXAMPLE_COMMANDS: list[dict[str, Any]] = [
+    {"id": "AT", "category": "general", "summary": "检测 AT 链路是否可用",
+     "desc": "Attention。确认串口链路与模组 AT 固件正常。",
+     "modes": ["run"], "results": ["OK"], "example": ["AT", "OK"],
+     "delay": 0.2},
+    {"id": "GMR", "category": "general", "summary": "查询固件版本",
+     "desc": "返回模组厂商、固件版本与编译时间等信息。",
+     "modes": ["run"], "results": ["OK"], "delay": 0.3},
+    {"id": "RST", "category": "general", "summary": "软复位模组",
+     "desc": "重启模组，复位后需重新等待就绪。",
+     "modes": ["run"], "results": ["OK"], "delay": 1.0},
+]
