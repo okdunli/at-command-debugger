@@ -19,8 +19,11 @@ from .config import AppConfig
 VIRTUAL_PORTS = ("SIM", "SIMULATOR", "VIRTUAL", "MOCK", "模拟", "模拟器")
 
 
-BAUD_CANDIDATES = (115200, 9600, 57600, 38400, 19200, 230400, 460800,
-                   74880, 4800, 921600)
+BAUD_CANDIDATES = (
+    115200, 9600, 57600, 38400, 19200, 4800, 2400, 1200, 300, 74880,
+    230400, 460800, 921600, 128000, 153600, 256000, 500000, 576000,
+    1000000, 1152000, 1500000, 2000000, 3000000, 4000000,
+)
 
 
 def is_virtual(port: str) -> bool:
@@ -264,6 +267,70 @@ class SerialManager:
             self._connected_at = time.time()
             self._emit_status("connected", port=target, virtual=False)
             return {"ok": True, "port": target, "virtual": False}
+
+    def apply_params(self, **overrides) -> dict:
+        """已连接状态下热应用串口参数（波特率/数据位/校验/停止位/流控/超时/DTR/RTS），
+        无需断开重连。port 变化不支持热应用，需走 connect()。"""
+        with self._lock:
+            port = self._port
+            if port is None:
+                return {"ok": False, "error": "串口未连接"}
+            ser_cfg = self.cfg.serial
+            changed = {k: v for k, v in overrides.items()
+                       if k in ser_cfg and k != "port"
+                       and ser_cfg.get(k) != v}
+            ser_cfg.update({k: v for k, v in overrides.items()
+                            if k in ser_cfg and k != "port"})
+            if self._virtual_active():
+                return {"ok": True, "applied": sorted(changed), "virtual": True}
+            if not changed:
+                return {"ok": True, "applied": []}
+            if not _HAS_SERIAL:
+                return {"ok": False, "error": "未安装 pyserial"}
+            try:
+                parity_map = {
+                    "N": serial.PARITY_NONE, "E": serial.PARITY_EVEN,
+                    "O": serial.PARITY_ODD, "M": serial.PARITY_MARK,
+                    "S": serial.PARITY_SPACE,
+                }
+                stop_map = {1: serial.STOPBITS_ONE,
+                            1.5: serial.STOPBITS_ONE_POINT_FIVE,
+                            2: serial.STOPBITS_TWO}
+                bytes_map = {5: serial.FIVEBITS, 6: serial.SIXBITS,
+                             7: serial.SEVENBITS, 8: serial.EIGHTBITS}
+                flow = str(ser_cfg.get("flowcontrol", "none")).lower()
+                if "baudrate" in changed:
+                    port.baudrate = int(ser_cfg.get("baudrate", 9600))
+                if "bytesize" in changed:
+                    port.bytesize = bytes_map.get(
+                        int(ser_cfg.get("bytesize", 8)), serial.EIGHTBITS)
+                if "parity" in changed:
+                    port.parity = parity_map.get(
+                        str(ser_cfg.get("parity", "N")).upper(),
+                        serial.PARITY_NONE)
+                if "stopbits" in changed:
+                    port.stopbits = stop_map.get(
+                        float(ser_cfg.get("stopbits", 1)), serial.STOPBITS_ONE)
+                if "timeout" in changed:
+                    port.timeout = float(ser_cfg.get("timeout", 1.0))
+                if "flowcontrol" in changed:
+                    port.rtscts = (flow == "rtscts")
+                    port.xonxoff = (flow == "xonxoff")
+                    port.dsrdtr = (flow == "dsrdtr")
+                if "dtr" in changed or "rts" in changed:
+                    dtr_on = str(ser_cfg.get("dtr", "off")).lower() not in (
+                        "off", "false", "0", "")
+                    rts_on = str(ser_cfg.get("rts", "off")).lower() not in (
+                        "off", "false", "0", "")
+                    if "dtr" in changed:
+                        port.dtr = dtr_on
+                    if "rts" in changed:
+                        port.rts = rts_on
+            except Exception as exc:
+                return {"ok": False, "error": f"串口参数应用失败：{exc}",
+                        "applied": sorted(changed)}
+            self._emit_status("params", applied=sorted(changed))
+            return {"ok": True, "applied": sorted(changed)}
 
     def _fail(self, message: str) -> dict:
         self._last_error = message
