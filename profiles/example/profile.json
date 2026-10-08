@@ -4,46 +4,136 @@
   "brand": "AT指令调试台",
   "subtitle": "通用 AT 模组 · 全功能示例工程（配合内置模拟器可离线演示）",
   "icon": "sparkles",
-  "version": "1.0.0",
-  "app_version": "1.0.0",
-  "doc": "",
+  "version": "1.0.1",
+  "app_version": "1.0.1",
+  "doc": "内置示例工程（无对应硬件，配合内置模拟器离线演示全功能）",
   "author": "AT指令调试台",
-  "release_date": "2026-09-28",
-  "website": "",
-  "homepage": "",
-  "intro": "本配置集是 AT 指令调试台的「全功能示例工程」：不针对任何具体型号，指令集与内置虚拟设备完全兼容——无需接硬件即可演示一键配置（字段联动/条件步骤/变量插值）、常用功能、测试套件（断言/校验/基线对比）、自定义按钮、指令库、错误码库等全部功能。把它当模板：复制一份改成你自己的模组即可。",
+  "release_date": "2026-10-08",
+  "website": "https://github.com/okdunli/at-command-debugger",
+  "homepage": "https://github.com/okdunli/at-command-debugger",
+  "intro": "本配置集是 AT 指令调试台的「全功能示例工程」：不针对任何具体型号，指令集与内置虚拟设备完全兼容——无需接硬件即可演示一键配置（字段联动/条件步骤/变量插值）、常用功能、测试套件（断言/校验/基线对比）、自定义按钮、指令库、错误码库等全部功能。把它当模板：复制一份改成你自己的模组即可。\n错误码库已随本 profile 内置（见 error_codes 字段），串口默认参数见 device.serial / serial_defaults，不再依赖代码内默认错误码集。",
   "categories": [
-    { "id": "general", "name": "通用指令", "icon": "sparkles", "desc": "链路检测、帮助、复位、日志与时间" },
-    { "id": "context", "name": "上下文管理", "icon": "database", "desc": "参数 NVM 存取与恢复出厂" },
-    { "id": "keys", "name": "密钥 / ID / EUI", "icon": "key-round", "desc": "设备标识与密钥读写" },
-    { "id": "join", "name": "入网 / 数据收发", "icon": "radio-tower", "desc": "网络激活与上行发送" },
-    { "id": "network", "name": "网络管理", "icon": "settings-2", "desc": "区域、Class、速率、窗口与功率" },
-    { "id": "radio", "name": "射频测试", "icon": "activity", "desc": "连续载波 / PER 收发 / 跳频" },
-    { "id": "info", "name": "认证 / 信息", "icon": "badge-check", "desc": "认证模式与电池信息" }
+    {
+      "id": "general",
+      "name": "通用指令",
+      "icon": "sparkles",
+      "desc": "链路检测、帮助、复位、日志与时间"
+    },
+    {
+      "id": "context",
+      "name": "上下文管理",
+      "icon": "database",
+      "desc": "参数 NVM 存取与恢复出厂"
+    },
+    {
+      "id": "keys",
+      "name": "密钥 / ID / EUI",
+      "icon": "key-round",
+      "desc": "设备标识与密钥读写"
+    },
+    {
+      "id": "join",
+      "name": "入网 / 数据收发",
+      "icon": "radio-tower",
+      "desc": "网络激活与上行发送"
+    },
+    {
+      "id": "network",
+      "name": "网络管理",
+      "icon": "settings-2",
+      "desc": "区域、Class、速率、窗口与功率"
+    },
+    {
+      "id": "radio",
+      "name": "射频测试",
+      "icon": "activity",
+      "desc": "连续载波 / PER 收发 / 跳频"
+    },
+    {
+      "id": "info",
+      "name": "认证 / 信息",
+      "icon": "badge-check",
+      "desc": "认证模式与电池信息"
+    }
   ],
   "bands": [
-    { "value": "0", "name": "AS923" },
-    { "value": "1", "name": "AU915" },
-    { "value": "2", "name": "CN470" },
-    { "value": "3", "name": "CN779" },
-    { "value": "4", "name": "EU433" },
-    { "value": "5", "name": "EU868" },
-    { "value": "6", "name": "KR920" },
-    { "value": "7", "name": "IN865" },
-    { "value": "8", "name": "US915" },
-    { "value": "9", "name": "RU864" }
+    {
+      "value": "0",
+      "name": "AS923"
+    },
+    {
+      "value": "1",
+      "name": "AU915"
+    },
+    {
+      "value": "2",
+      "name": "CN470"
+    },
+    {
+      "value": "3",
+      "name": "CN779"
+    },
+    {
+      "value": "4",
+      "name": "EU433"
+    },
+    {
+      "value": "5",
+      "name": "EU868"
+    },
+    {
+      "value": "6",
+      "name": "KR920"
+    },
+    {
+      "value": "7",
+      "name": "IN865"
+    },
+    {
+      "value": "8",
+      "name": "US915"
+    },
+    {
+      "value": "9",
+      "name": "RU864"
+    }
   ],
   "band_rx2": {
-    "2": { "freq": "486900000", "dr": "1" },
-    "5": { "freq": "869525000", "dr": "0" },
-    "8": { "freq": "923300000", "dr": "8" }
+    "2": {
+      "freq": "486900000",
+      "dr": "1"
+    },
+    "5": {
+      "freq": "869525000",
+      "dr": "0"
+    },
+    "8": {
+      "freq": "923300000",
+      "dr": "8"
+    }
   },
-  "classes": ["A", "B", "C"],
+  "classes": [
+    "A",
+    "B",
+    "C"
+  ],
   "verbose_levels": [
-    { "value": "0", "name": "OFF" },
-    { "value": "1", "name": "L" },
-    { "value": "2", "name": "M（默认）" },
-    { "value": "3", "name": "H" }
+    {
+      "value": "0",
+      "name": "OFF"
+    },
+    {
+      "value": "1",
+      "name": "L"
+    },
+    {
+      "value": "2",
+      "name": "M（默认）"
+    },
+    {
+      "value": "3",
+      "name": "H"
+    }
   ],
   "defaults": {
     "band": "5",
@@ -86,50 +176,823 @@
       "ADR": "0",
       "RX2FQ": "869525000",
       "TCONF": "868000000:14:125:12:4/5:0:0:1:255:0:0:0"
+    },
+    "serial": {
+      "baudrate": 115200,
+      "bytesize": 8,
+      "parity": "N",
+      "stopbits": 1,
+      "flowcontrol": "none",
+      "timeout": 1.0,
+      "dtr": "off",
+      "rts": "off",
+      "line_ending": "CRLF",
+      "note": "示例工程采用通用串口默认值：115200bps，8N1 无流控，AT 指令以 \\r\\n 结尾（配合内置模拟器无需真实串口）。"
     }
   },
   "commands": [
-    { "id": "AT", "category": "general", "summary": "检测 AT 链路是否可用", "desc": "Attention。确认串口链路与模组 AT 固件正常。", "modes": ["run"], "results": ["OK"], "example": ["AT", "OK"], "delay": 0.2 },
-    { "id": "AT?", "category": "general", "summary": "列出全部指令帮助", "desc": "打印所有支持指令的简短帮助。", "modes": ["run"], "results": ["OK"], "example": ["AT?", "AT+<CMD>? ...", "OK"], "delay": 0.4 },
-    { "id": "ATZ", "category": "general", "summary": "复位整个系统", "desc": "NVIC 复位（含射频）。不返回状态码，重启后打印版本横幅。", "modes": ["run"], "results": [], "example": ["ATZ", "APPLICATION_VERSION: V1.0.0"], "delay": 1.5, "no_status": true },
-    { "id": "AT+VL", "category": "general", "summary": "设置/读取日志等级", "desc": "verbose level 0=OFF 1=L 2=M（默认） 3=H，等级越高调试输出越多。", "modes": ["set", "query", "help"], "params": ["0~3"], "results": ["OK", "AT_PARAM_ERROR"], "example": ["AT+VL=3", "OK"], "delay": 0.3 },
-    { "id": "AT+LTIME", "category": "general", "summary": "读取本地时间（UTC 格式）", "desc": "返回模组本地时间与日期。", "modes": ["query"], "results": ["LTIME:..."], "example": ["AT+LTIME=?", "LTIME:14H30M00S on 28/09/2026", "OK"], "delay": 0.3 },
-    { "id": "AT+RFS", "category": "context", "summary": "恢复出厂设置", "desc": "擦除 Flash 中的 LoRaWAN 上下文，复位后恢复出厂参数。危险操作，密钥会清空。", "modes": ["run"], "results": ["OK"], "example": ["AT+RFS", "OK"], "delay": 1.0 },
-    { "id": "AT+CS", "category": "context", "summary": "保存上下文到 NVM", "desc": "把当前 LoRaWAN 上下文（密钥、帧计数器等）写入 Flash 扇区。", "modes": ["run"], "results": ["NVM DATA STORED", "OK"], "example": ["AT+CS", "NVM DATA STORED", "OK"], "delay": 0.5 },
-    { "id": "AT+DEUI", "category": "keys", "summary": "设备唯一 ID（8 字节）", "desc": "DevEUI，冒号分隔十六进制。", "modes": ["set", "query", "help"], "results": ["OK", "AT_PARAM_ERROR"], "example": ["AT+DEUI=00:11:22:33:44:55:66:77", "OK"], "delay": 0.3 },
-    { "id": "AT+APPEUI", "category": "keys", "summary": "应用 EUI（8 字节）", "desc": "AppEUI / JoinEUI，OTAA 入网随 Join Request 上报。", "modes": ["set", "query", "help"], "results": ["OK", "AT_PARAM_ERROR"], "example": ["AT+APPEUI=?", "01:01:01:01:01:01:01:01", "OK"], "delay": 0.3 },
-    { "id": "AT+APPKEY", "category": "keys", "summary": "应用根密钥（16 字节）", "desc": "OTAA 根密钥 AppKey。", "modes": ["set", "query", "help"], "results": ["OK", "AT_PARAM_ERROR"], "example": ["AT+APPKEY=2B:7E:...:3C", "OK"], "delay": 0.3 },
-    { "id": "AT+NWKKEY", "category": "keys", "summary": "网络根密钥（16 字节）", "desc": "LoRaWAN 1.1 NwkKey。", "modes": ["set", "query", "help"], "results": ["OK", "AT_PARAM_ERROR"], "example": ["AT+NWKKEY=?", "2B:7E:...:3C", "OK"], "delay": 0.3 },
-    { "id": "AT+APPSKEY", "category": "keys", "summary": "应用会话密钥（16 字节）", "desc": "ABP 模式 AppSKey。", "modes": ["set", "query", "help"], "results": ["OK", "AT_PARAM_ERROR"], "example": ["AT+APPSKEY=?", "AA:BB:...", "OK"], "delay": 0.3 },
-    { "id": "AT+NWKSKEY", "category": "keys", "summary": "网络会话密钥（16 字节）", "desc": "ABP 模式 NwkSKey。", "modes": ["set", "query", "help"], "results": ["OK", "AT_PARAM_ERROR"], "example": ["AT+NWKSKEY=?", "AA:BB:...", "OK"], "delay": 0.3 },
-    { "id": "AT+DADDR", "category": "keys", "summary": "设备地址（4 字节）", "desc": "ABP 模式 DevAddr。", "modes": ["set", "query", "help"], "results": ["OK", "AT_PARAM_ERROR"], "example": ["AT+DADDR=01:02:0A:0B", "OK"], "delay": 0.3 },
-    { "id": "AT+NWKID", "category": "keys", "summary": "网络 ID（0~127）", "desc": "NetID。", "modes": ["set", "query", "help"], "results": ["OK", "AT_PARAM_ERROR"], "example": ["AT+NWKID=127", "OK"], "delay": 0.3 },
-    { "id": "AT+JOIN", "category": "join", "summary": "入网（0=ABP 1=OTAA）", "desc": "发起网络激活。OTAA 成功返回 +EVT:JOINED，失败 +EVT:JOIN FAILED（需重发）。", "modes": ["run", "set"], "results": ["OK", "+EVT:JOINED", "+EVT:JOIN FAILED"], "example": ["AT+JOIN=1", "OK", "+EVT:JOINED"], "delay": 0.5, "wait_event": 4 },
-    { "id": "AT+SEND", "category": "join", "summary": "发送数据 port:ack:payload", "desc": "payload 为十六进制。ack=1 为 confirmed 上行，成功追加 +EVT:SEND_CONFIRMED。未入网返回 AT_NO_NETWORK_JOINED。", "modes": ["set"], "results": ["OK", "+EVT:SEND_CONFIRMED", "AT_NO_NETWORK_JOINED", "AT_PARAM_ERROR"], "example": ["AT+SEND=10:1:68656C6C6F", "OK", "+EVT:SEND_CONFIRMED"], "delay": 0.5 },
-    { "id": "AT+LINKC", "category": "join", "summary": "链路检查（LinkCheckReq）", "desc": "在下一次上行中搭载 LinkCheckReq MAC 命令，网关余量随 +EVT:RX 事件返回。", "modes": ["run"], "results": ["OK"], "example": ["AT+LINKC", "OK"], "delay": 0.3 },
-    { "id": "AT+VER", "category": "network", "summary": "读取固件/协议栈版本", "desc": "返回 LoRaWAN 版本信息。", "modes": ["query"], "results": ["APPLICATION_VERSION:..."], "example": ["AT+VER=?", "APPLICATION_VERSION: V1.0.0", "OK"], "delay": 0.3 },
-    { "id": "AT+ADR", "category": "network", "summary": "自适应速率开关", "desc": "0=关闭 1=开启。关闭后需手动设 DR/TXP。", "modes": ["set", "query", "help"], "results": ["OK", "AT_PARAM_ERROR"], "example": ["AT+ADR=1", "OK"], "delay": 0.3 },
-    { "id": "AT+DR", "category": "network", "summary": "数据速率 DR（0~7）", "desc": "ADR 开启时读取返回 AT_ERROR。", "modes": ["set", "query", "help"], "results": ["OK", "AT_ERROR", "AT_PARAM_ERROR"], "example": ["AT+DR=5", "OK"], "delay": 0.3 },
-    { "id": "AT+BAND", "category": "network", "summary": "工作区域（0~9）", "desc": "选择 LoRaWAN 区域频段，切换后需重新入网。", "modes": ["set", "query", "help"], "results": ["OK", "AT_PARAM_ERROR"], "example": ["AT+BAND=?", "5:EU868", "OK"], "delay": 0.3 },
-    { "id": "AT+CLASS", "category": "network", "summary": "设备 Class（A/B/C）", "desc": "切换到 B/C 前需已入网；切换成功发 +EVT:SWITCH_TO_CLASS_<X>。", "modes": ["set", "query", "help"], "results": ["OK", "+EVT:SWITCH_TO_CLASS_C", "AT_NO_NET_JOINED"], "example": ["AT+CLASS=C", "OK", "+EVT:SWITCH_TO_CLASS_C"], "delay": 0.3 },
-    { "id": "AT+DCS", "category": "network", "summary": "占空比开关", "desc": "0=启用占空比限制 1=关闭。", "modes": ["set", "query", "help"], "results": ["OK", "AT_PARAM_ERROR"], "example": ["AT+DCS=?", "0", "OK"], "delay": 0.3 },
-    { "id": "AT+TXP", "category": "network", "summary": "发射功率（0~15）", "desc": "数值与 dBm 的对应关系随区域不同。", "modes": ["set", "query", "help"], "results": ["OK", "AT_PARAM_ERROR"], "example": ["AT+TXP=0", "OK"], "delay": 0.3 },
-    { "id": "AT+RX2FQ", "category": "network", "summary": "RX2 窗口频率（Hz）", "desc": "第二接收窗口频率，单位 Hz。", "modes": ["set", "query", "help"], "results": ["OK", "AT_PARAM_ERROR"], "example": ["AT+RX2FQ=869525000", "OK"], "delay": 0.3 },
-    { "id": "AT+RX2DR", "category": "network", "summary": "RX2 窗口速率（0~15）", "desc": "第二接收窗口数据速率。", "modes": ["set", "query", "help"], "results": ["OK", "AT_PARAM_ERROR"], "example": ["AT+RX2DR=0", "OK"], "delay": 0.3 },
-    { "id": "AT+RX1DL", "category": "network", "summary": "RX1 窗口延迟（ms）", "desc": "上行后第一接收窗口延迟。", "modes": ["set", "query", "help"], "results": ["OK", "AT_PARAM_ERROR"], "example": ["AT+RX1DL=?", "1000", "OK"], "delay": 0.3 },
-    { "id": "AT+RX2DL", "category": "network", "summary": "RX2 窗口延迟（ms）", "desc": "上行后第二接收窗口延迟。", "modes": ["set", "query", "help"], "results": ["OK", "AT_PARAM_ERROR"], "example": ["AT+RX2DL=?", "2000", "OK"], "delay": 0.3 },
-    { "id": "AT+JN1DL", "category": "network", "summary": "Join RX1 延迟（ms）", "desc": "入网第一接收窗口延迟，默认 5000。", "modes": ["set", "query", "help"], "results": ["OK", "AT_PARAM_ERROR"], "example": ["AT+JN1DL=5000", "OK"], "delay": 0.3 },
-    { "id": "AT+JN2DL", "category": "network", "summary": "Join RX2 延迟（ms）", "desc": "入网第二接收窗口延迟，默认 6000。", "modes": ["set", "query", "help"], "results": ["OK", "AT_PARAM_ERROR"], "example": ["AT+JN2DL=6000", "OK"], "delay": 0.3 },
-    { "id": "AT+PGSLOT", "category": "network", "summary": "Class B Ping 插槽周期", "desc": "unicast ping slot periodicity 0~7，实际周期 2^(7+值) 秒。已入网时发送 PingSlotInfoReq。", "modes": ["set", "query", "help"], "results": ["OK", "AT_PARAM_ERROR"], "example": ["AT+PGSLOT=4", "OK"], "delay": 0.3 },
-    { "id": "AT+TCONF", "category": "radio", "summary": "射频测试参数配置", "desc": "freq:pow:bw:sf:cr:lna:pa:mod:paylen:freqdev:lowdropt:BT，冒号分隔 12 段。", "modes": ["set", "query"], "results": ["OK", "1: Freq= ... Hz", "AT_PARAM_ERROR"], "example": ["AT+TCONF=868000000:14:125:12:4/5:0:0:1:255:0:0:0", "OK"], "delay": 0.4 },
-    { "id": "AT+TTONE", "category": "radio", "summary": "连续载波发射", "desc": "按 TCONF 参数持续发射单音。测试中再发射频指令返回 AT_BUSY_ERROR。", "modes": ["run"], "results": ["OK", "AT_BUSY_ERROR"], "example": ["AT+TTONE", "OK"], "delay": 0.5 },
-    { "id": "AT+TRSSI", "category": "radio", "summary": "RSSI 连续接收", "desc": "进入连续接收并周期性打印 RSSI 值。", "modes": ["run"], "results": ["OK", "AT_BUSY_ERROR"], "example": ["AT+TRSSI", "OK"], "delay": 0.5 },
-    { "id": "AT+TTX", "category": "radio", "summary": "PER 发射测试", "desc": "按 TCONF 连续发送指定数量的包。", "modes": ["set"], "results": ["OK", "AT_BUSY_ERROR"], "example": ["AT+TTX=100", "OK"], "delay": 0.5 },
-    { "id": "AT+TRX", "category": "radio", "summary": "PER 接收测试", "desc": "接收指定包数并统计 PER（丢包率）。", "modes": ["set"], "results": ["OK", "AT_BUSY_ERROR"], "example": ["AT+TRX=100", "OK"], "delay": 0.5 },
-    { "id": "AT+TTH", "category": "radio", "summary": "跳频发射测试", "desc": "Fstart,Fstop,Fdelta,包数（逗号分隔），从起始频率跳到截止频率。", "modes": ["set"], "results": ["OK", "AT_BUSY_ERROR", "AT_PARAM_ERROR"], "example": ["AT+TTH=868000000,868600000,200000,10", "OK"], "delay": 0.5 },
-    { "id": "AT+TOFF", "category": "radio", "summary": "停止射频测试", "desc": "终止 TTONE / TRSSI / TTX / TRX / TTH。", "modes": ["run"], "results": ["OK"], "example": ["AT+TOFF", "OK"], "delay": 0.3 },
-    { "id": "AT+CERTIF", "category": "info", "summary": "进入 LoRaWAN 认证模式", "desc": "mode 0=ABP 1=OTAA，用于认证测试流程。", "modes": ["set"], "results": ["OK"], "example": ["AT+CERTIF=1", "OK"], "delay": 0.5 },
-    { "id": "AT+BAT", "category": "info", "summary": "读取电池电压（mV）", "desc": "返回供电电压，单位毫伏。", "modes": ["query"], "results": ["3300", "OK"], "example": ["AT+BAT=?", "3300", "OK"], "delay": 0.3 }
+    {
+      "id": "AT",
+      "category": "general",
+      "summary": "检测 AT 链路是否可用",
+      "desc": "Attention。确认串口链路与模组 AT 固件正常。",
+      "modes": [
+        "run"
+      ],
+      "results": [
+        "OK"
+      ],
+      "example": [
+        "AT",
+        "OK"
+      ],
+      "delay": 0.2
+    },
+    {
+      "id": "AT?",
+      "category": "general",
+      "summary": "列出全部指令帮助",
+      "desc": "打印所有支持指令的简短帮助。",
+      "modes": [
+        "run"
+      ],
+      "results": [
+        "OK"
+      ],
+      "example": [
+        "AT?",
+        "AT+<CMD>? ...",
+        "OK"
+      ],
+      "delay": 0.4
+    },
+    {
+      "id": "ATZ",
+      "category": "general",
+      "summary": "复位整个系统",
+      "desc": "NVIC 复位（含射频）。不返回状态码，重启后打印版本横幅。",
+      "modes": [
+        "run"
+      ],
+      "results": [],
+      "example": [
+        "ATZ",
+        "APPLICATION_VERSION: V1.0.0"
+      ],
+      "delay": 1.5,
+      "no_status": true
+    },
+    {
+      "id": "AT+VL",
+      "category": "general",
+      "summary": "设置/读取日志等级",
+      "desc": "verbose level 0=OFF 1=L 2=M（默认） 3=H，等级越高调试输出越多。",
+      "modes": [
+        "set",
+        "query",
+        "help"
+      ],
+      "params": [
+        "0~3"
+      ],
+      "results": [
+        "OK",
+        "AT_PARAM_ERROR"
+      ],
+      "example": [
+        "AT+VL=3",
+        "OK"
+      ],
+      "delay": 0.3
+    },
+    {
+      "id": "AT+LTIME",
+      "category": "general",
+      "summary": "读取本地时间（UTC 格式）",
+      "desc": "返回模组本地时间与日期。",
+      "modes": [
+        "query"
+      ],
+      "results": [
+        "LTIME:..."
+      ],
+      "example": [
+        "AT+LTIME=?",
+        "LTIME:14H30M00S on 28/09/2026",
+        "OK"
+      ],
+      "delay": 0.3
+    },
+    {
+      "id": "AT+RFS",
+      "category": "context",
+      "summary": "恢复出厂设置",
+      "desc": "擦除 Flash 中的 LoRaWAN 上下文，复位后恢复出厂参数。危险操作，密钥会清空。",
+      "modes": [
+        "run"
+      ],
+      "results": [
+        "OK"
+      ],
+      "example": [
+        "AT+RFS",
+        "OK"
+      ],
+      "delay": 1.0
+    },
+    {
+      "id": "AT+CS",
+      "category": "context",
+      "summary": "保存上下文到 NVM",
+      "desc": "把当前 LoRaWAN 上下文（密钥、帧计数器等）写入 Flash 扇区。",
+      "modes": [
+        "run"
+      ],
+      "results": [
+        "NVM DATA STORED",
+        "OK"
+      ],
+      "example": [
+        "AT+CS",
+        "NVM DATA STORED",
+        "OK"
+      ],
+      "delay": 0.5
+    },
+    {
+      "id": "AT+DEUI",
+      "category": "keys",
+      "summary": "设备唯一 ID（8 字节）",
+      "desc": "DevEUI，冒号分隔十六进制。",
+      "modes": [
+        "set",
+        "query",
+        "help"
+      ],
+      "results": [
+        "OK",
+        "AT_PARAM_ERROR"
+      ],
+      "example": [
+        "AT+DEUI=00:11:22:33:44:55:66:77",
+        "OK"
+      ],
+      "delay": 0.3
+    },
+    {
+      "id": "AT+APPEUI",
+      "category": "keys",
+      "summary": "应用 EUI（8 字节）",
+      "desc": "AppEUI / JoinEUI，OTAA 入网随 Join Request 上报。",
+      "modes": [
+        "set",
+        "query",
+        "help"
+      ],
+      "results": [
+        "OK",
+        "AT_PARAM_ERROR"
+      ],
+      "example": [
+        "AT+APPEUI=?",
+        "01:01:01:01:01:01:01:01",
+        "OK"
+      ],
+      "delay": 0.3
+    },
+    {
+      "id": "AT+APPKEY",
+      "category": "keys",
+      "summary": "应用根密钥（16 字节）",
+      "desc": "OTAA 根密钥 AppKey。",
+      "modes": [
+        "set",
+        "query",
+        "help"
+      ],
+      "results": [
+        "OK",
+        "AT_PARAM_ERROR"
+      ],
+      "example": [
+        "AT+APPKEY=2B:7E:...:3C",
+        "OK"
+      ],
+      "delay": 0.3
+    },
+    {
+      "id": "AT+NWKKEY",
+      "category": "keys",
+      "summary": "网络根密钥（16 字节）",
+      "desc": "LoRaWAN 1.1 NwkKey。",
+      "modes": [
+        "set",
+        "query",
+        "help"
+      ],
+      "results": [
+        "OK",
+        "AT_PARAM_ERROR"
+      ],
+      "example": [
+        "AT+NWKKEY=?",
+        "2B:7E:...:3C",
+        "OK"
+      ],
+      "delay": 0.3
+    },
+    {
+      "id": "AT+APPSKEY",
+      "category": "keys",
+      "summary": "应用会话密钥（16 字节）",
+      "desc": "ABP 模式 AppSKey。",
+      "modes": [
+        "set",
+        "query",
+        "help"
+      ],
+      "results": [
+        "OK",
+        "AT_PARAM_ERROR"
+      ],
+      "example": [
+        "AT+APPSKEY=?",
+        "AA:BB:...",
+        "OK"
+      ],
+      "delay": 0.3
+    },
+    {
+      "id": "AT+NWKSKEY",
+      "category": "keys",
+      "summary": "网络会话密钥（16 字节）",
+      "desc": "ABP 模式 NwkSKey。",
+      "modes": [
+        "set",
+        "query",
+        "help"
+      ],
+      "results": [
+        "OK",
+        "AT_PARAM_ERROR"
+      ],
+      "example": [
+        "AT+NWKSKEY=?",
+        "AA:BB:...",
+        "OK"
+      ],
+      "delay": 0.3
+    },
+    {
+      "id": "AT+DADDR",
+      "category": "keys",
+      "summary": "设备地址（4 字节）",
+      "desc": "ABP 模式 DevAddr。",
+      "modes": [
+        "set",
+        "query",
+        "help"
+      ],
+      "results": [
+        "OK",
+        "AT_PARAM_ERROR"
+      ],
+      "example": [
+        "AT+DADDR=01:02:0A:0B",
+        "OK"
+      ],
+      "delay": 0.3
+    },
+    {
+      "id": "AT+NWKID",
+      "category": "keys",
+      "summary": "网络 ID（0~127）",
+      "desc": "NetID。",
+      "modes": [
+        "set",
+        "query",
+        "help"
+      ],
+      "results": [
+        "OK",
+        "AT_PARAM_ERROR"
+      ],
+      "example": [
+        "AT+NWKID=127",
+        "OK"
+      ],
+      "delay": 0.3
+    },
+    {
+      "id": "AT+JOIN",
+      "category": "join",
+      "summary": "入网（0=ABP 1=OTAA）",
+      "desc": "发起网络激活。OTAA 成功返回 +EVT:JOINED，失败 +EVT:JOIN FAILED（需重发）。",
+      "modes": [
+        "run",
+        "set"
+      ],
+      "results": [
+        "OK",
+        "+EVT:JOINED",
+        "+EVT:JOIN FAILED"
+      ],
+      "example": [
+        "AT+JOIN=1",
+        "OK",
+        "+EVT:JOINED"
+      ],
+      "delay": 0.5,
+      "wait_event": 4,
+      "timeout": 30
+    },
+    {
+      "id": "AT+SEND",
+      "category": "join",
+      "summary": "发送数据 port:ack:payload",
+      "desc": "payload 为十六进制。ack=1 为 confirmed 上行，成功追加 +EVT:SEND_CONFIRMED。未入网返回 AT_NO_NETWORK_JOINED。",
+      "modes": [
+        "set"
+      ],
+      "results": [
+        "OK",
+        "+EVT:SEND_CONFIRMED",
+        "AT_NO_NETWORK_JOINED",
+        "AT_PARAM_ERROR"
+      ],
+      "example": [
+        "AT+SEND=10:1:68656C6C6F",
+        "OK",
+        "+EVT:SEND_CONFIRMED"
+      ],
+      "delay": 0.5
+    },
+    {
+      "id": "AT+LINKC",
+      "category": "join",
+      "summary": "链路检查（LinkCheckReq）",
+      "desc": "在下一次上行中搭载 LinkCheckReq MAC 命令，网关余量随 +EVT:RX 事件返回。",
+      "modes": [
+        "run"
+      ],
+      "results": [
+        "OK"
+      ],
+      "example": [
+        "AT+LINKC",
+        "OK"
+      ],
+      "delay": 0.3
+    },
+    {
+      "id": "AT+VER",
+      "category": "network",
+      "summary": "读取固件/协议栈版本",
+      "desc": "返回 LoRaWAN 版本信息。",
+      "modes": [
+        "query"
+      ],
+      "results": [
+        "APPLICATION_VERSION:..."
+      ],
+      "example": [
+        "AT+VER=?",
+        "APPLICATION_VERSION: V1.0.0",
+        "OK"
+      ],
+      "delay": 0.3
+    },
+    {
+      "id": "AT+ADR",
+      "category": "network",
+      "summary": "自适应速率开关",
+      "desc": "0=关闭 1=开启。关闭后需手动设 DR/TXP。",
+      "modes": [
+        "set",
+        "query",
+        "help"
+      ],
+      "results": [
+        "OK",
+        "AT_PARAM_ERROR"
+      ],
+      "example": [
+        "AT+ADR=1",
+        "OK"
+      ],
+      "delay": 0.3
+    },
+    {
+      "id": "AT+DR",
+      "category": "network",
+      "summary": "数据速率 DR（0~7）",
+      "desc": "ADR 开启时读取返回 AT_ERROR。",
+      "modes": [
+        "set",
+        "query",
+        "help"
+      ],
+      "results": [
+        "OK",
+        "AT_ERROR",
+        "AT_PARAM_ERROR"
+      ],
+      "example": [
+        "AT+DR=5",
+        "OK"
+      ],
+      "delay": 0.3
+    },
+    {
+      "id": "AT+BAND",
+      "category": "network",
+      "summary": "工作区域（0~9）",
+      "desc": "选择 LoRaWAN 区域频段，切换后需重新入网。",
+      "modes": [
+        "set",
+        "query",
+        "help"
+      ],
+      "results": [
+        "OK",
+        "AT_PARAM_ERROR"
+      ],
+      "example": [
+        "AT+BAND=?",
+        "5:EU868",
+        "OK"
+      ],
+      "delay": 0.3
+    },
+    {
+      "id": "AT+CLASS",
+      "category": "network",
+      "summary": "设备 Class（A/B/C）",
+      "desc": "切换到 B/C 前需已入网；切换成功发 +EVT:SWITCH_TO_CLASS_<X>。",
+      "modes": [
+        "set",
+        "query",
+        "help"
+      ],
+      "results": [
+        "OK",
+        "+EVT:SWITCH_TO_CLASS_C",
+        "AT_NO_NET_JOINED"
+      ],
+      "example": [
+        "AT+CLASS=C",
+        "OK",
+        "+EVT:SWITCH_TO_CLASS_C"
+      ],
+      "delay": 0.3
+    },
+    {
+      "id": "AT+DCS",
+      "category": "network",
+      "summary": "占空比开关",
+      "desc": "0=启用占空比限制 1=关闭。",
+      "modes": [
+        "set",
+        "query",
+        "help"
+      ],
+      "results": [
+        "OK",
+        "AT_PARAM_ERROR"
+      ],
+      "example": [
+        "AT+DCS=?",
+        "0",
+        "OK"
+      ],
+      "delay": 0.3
+    },
+    {
+      "id": "AT+TXP",
+      "category": "network",
+      "summary": "发射功率（0~15）",
+      "desc": "数值与 dBm 的对应关系随区域不同。",
+      "modes": [
+        "set",
+        "query",
+        "help"
+      ],
+      "results": [
+        "OK",
+        "AT_PARAM_ERROR"
+      ],
+      "example": [
+        "AT+TXP=0",
+        "OK"
+      ],
+      "delay": 0.3
+    },
+    {
+      "id": "AT+RX2FQ",
+      "category": "network",
+      "summary": "RX2 窗口频率（Hz）",
+      "desc": "第二接收窗口频率，单位 Hz。",
+      "modes": [
+        "set",
+        "query",
+        "help"
+      ],
+      "results": [
+        "OK",
+        "AT_PARAM_ERROR"
+      ],
+      "example": [
+        "AT+RX2FQ=869525000",
+        "OK"
+      ],
+      "delay": 0.3
+    },
+    {
+      "id": "AT+RX2DR",
+      "category": "network",
+      "summary": "RX2 窗口速率（0~15）",
+      "desc": "第二接收窗口数据速率。",
+      "modes": [
+        "set",
+        "query",
+        "help"
+      ],
+      "results": [
+        "OK",
+        "AT_PARAM_ERROR"
+      ],
+      "example": [
+        "AT+RX2DR=0",
+        "OK"
+      ],
+      "delay": 0.3
+    },
+    {
+      "id": "AT+RX1DL",
+      "category": "network",
+      "summary": "RX1 窗口延迟（ms）",
+      "desc": "上行后第一接收窗口延迟。",
+      "modes": [
+        "set",
+        "query",
+        "help"
+      ],
+      "results": [
+        "OK",
+        "AT_PARAM_ERROR"
+      ],
+      "example": [
+        "AT+RX1DL=?",
+        "1000",
+        "OK"
+      ],
+      "delay": 0.3
+    },
+    {
+      "id": "AT+RX2DL",
+      "category": "network",
+      "summary": "RX2 窗口延迟（ms）",
+      "desc": "上行后第二接收窗口延迟。",
+      "modes": [
+        "set",
+        "query",
+        "help"
+      ],
+      "results": [
+        "OK",
+        "AT_PARAM_ERROR"
+      ],
+      "example": [
+        "AT+RX2DL=?",
+        "2000",
+        "OK"
+      ],
+      "delay": 0.3
+    },
+    {
+      "id": "AT+JN1DL",
+      "category": "network",
+      "summary": "Join RX1 延迟（ms）",
+      "desc": "入网第一接收窗口延迟，默认 5000。",
+      "modes": [
+        "set",
+        "query",
+        "help"
+      ],
+      "results": [
+        "OK",
+        "AT_PARAM_ERROR"
+      ],
+      "example": [
+        "AT+JN1DL=5000",
+        "OK"
+      ],
+      "delay": 0.3
+    },
+    {
+      "id": "AT+JN2DL",
+      "category": "network",
+      "summary": "Join RX2 延迟（ms）",
+      "desc": "入网第二接收窗口延迟，默认 6000。",
+      "modes": [
+        "set",
+        "query",
+        "help"
+      ],
+      "results": [
+        "OK",
+        "AT_PARAM_ERROR"
+      ],
+      "example": [
+        "AT+JN2DL=6000",
+        "OK"
+      ],
+      "delay": 0.3
+    },
+    {
+      "id": "AT+PGSLOT",
+      "category": "network",
+      "summary": "Class B Ping 插槽周期",
+      "desc": "unicast ping slot periodicity 0~7，实际周期 2^(7+值) 秒。已入网时发送 PingSlotInfoReq。",
+      "modes": [
+        "set",
+        "query",
+        "help"
+      ],
+      "results": [
+        "OK",
+        "AT_PARAM_ERROR"
+      ],
+      "example": [
+        "AT+PGSLOT=4",
+        "OK"
+      ],
+      "delay": 0.3
+    },
+    {
+      "id": "AT+TCONF",
+      "category": "radio",
+      "summary": "射频测试参数配置",
+      "desc": "freq:pow:bw:sf:cr:lna:pa:mod:paylen:freqdev:lowdropt:BT，冒号分隔 12 段。",
+      "modes": [
+        "set",
+        "query"
+      ],
+      "results": [
+        "OK",
+        "1: Freq= ... Hz",
+        "AT_PARAM_ERROR"
+      ],
+      "example": [
+        "AT+TCONF=868000000:14:125:12:4/5:0:0:1:255:0:0:0",
+        "OK"
+      ],
+      "delay": 0.4
+    },
+    {
+      "id": "AT+TTONE",
+      "category": "radio",
+      "summary": "连续载波发射",
+      "desc": "按 TCONF 参数持续发射单音。测试中再发射频指令返回 AT_BUSY_ERROR。",
+      "modes": [
+        "run"
+      ],
+      "results": [
+        "OK",
+        "AT_BUSY_ERROR"
+      ],
+      "example": [
+        "AT+TTONE",
+        "OK"
+      ],
+      "delay": 0.5
+    },
+    {
+      "id": "AT+TRSSI",
+      "category": "radio",
+      "summary": "RSSI 连续接收",
+      "desc": "进入连续接收并周期性打印 RSSI 值。",
+      "modes": [
+        "run"
+      ],
+      "results": [
+        "OK",
+        "AT_BUSY_ERROR"
+      ],
+      "example": [
+        "AT+TRSSI",
+        "OK"
+      ],
+      "delay": 0.5
+    },
+    {
+      "id": "AT+TTX",
+      "category": "radio",
+      "summary": "PER 发射测试",
+      "desc": "按 TCONF 连续发送指定数量的包。",
+      "modes": [
+        "set"
+      ],
+      "results": [
+        "OK",
+        "AT_BUSY_ERROR"
+      ],
+      "example": [
+        "AT+TTX=100",
+        "OK"
+      ],
+      "delay": 0.5
+    },
+    {
+      "id": "AT+TRX",
+      "category": "radio",
+      "summary": "PER 接收测试",
+      "desc": "接收指定包数并统计 PER（丢包率）。",
+      "modes": [
+        "set"
+      ],
+      "results": [
+        "OK",
+        "AT_BUSY_ERROR"
+      ],
+      "example": [
+        "AT+TRX=100",
+        "OK"
+      ],
+      "delay": 0.5
+    },
+    {
+      "id": "AT+TTH",
+      "category": "radio",
+      "summary": "跳频发射测试",
+      "desc": "Fstart,Fstop,Fdelta,包数（逗号分隔），从起始频率跳到截止频率。",
+      "modes": [
+        "set"
+      ],
+      "results": [
+        "OK",
+        "AT_BUSY_ERROR",
+        "AT_PARAM_ERROR"
+      ],
+      "example": [
+        "AT+TTH=868000000,868600000,200000,10",
+        "OK"
+      ],
+      "delay": 0.5
+    },
+    {
+      "id": "AT+TOFF",
+      "category": "radio",
+      "summary": "停止射频测试",
+      "desc": "终止 TTONE / TRSSI / TTX / TRX / TTH。",
+      "modes": [
+        "run"
+      ],
+      "results": [
+        "OK"
+      ],
+      "example": [
+        "AT+TOFF",
+        "OK"
+      ],
+      "delay": 0.3
+    },
+    {
+      "id": "AT+CERTIF",
+      "category": "info",
+      "summary": "进入 LoRaWAN 认证模式",
+      "desc": "mode 0=ABP 1=OTAA，用于认证测试流程。",
+      "modes": [
+        "set"
+      ],
+      "results": [
+        "OK"
+      ],
+      "example": [
+        "AT+CERTIF=1",
+        "OK"
+      ],
+      "delay": 0.5
+    },
+    {
+      "id": "AT+BAT",
+      "category": "info",
+      "summary": "读取电池电压（mV）",
+      "desc": "返回供电电压，单位毫伏。",
+      "modes": [
+        "query"
+      ],
+      "results": [
+        "3300",
+        "OK"
+      ],
+      "example": [
+        "AT+BAT=?",
+        "3300",
+        "OK"
+      ],
+      "delay": 0.3
+    }
   ],
   "presets": [
     {
@@ -140,8 +1003,19 @@
       "desc": "最小示例：只有两步。演示步骤、预期与延时。",
       "fields": [],
       "steps": [
-        { "cmd": "AT", "label": "链路自检", "delay": 0.3, "expect": "OK", "note": "确认串口与固件就绪" },
-        { "cmd": "AT+VER=?", "label": "读版本", "delay": 0.3, "expect": "OK" }
+        {
+          "cmd": "AT",
+          "label": "链路自检",
+          "delay": 0.3,
+          "expect": "OK",
+          "note": "确认串口与固件就绪"
+        },
+        {
+          "cmd": "AT+VER=?",
+          "label": "读版本",
+          "delay": 0.3,
+          "expect": "OK"
+        }
       ]
     },
     {
@@ -151,30 +1025,165 @@
       "accent": "blue",
       "desc": "演示字段类型（select/hex/bool/int）、条件步骤（when）、密钥归一化（key:8/key:16）、按频段自动带出 RX2（rx2:freq/rx2:dr）与 default 兜底。",
       "fields": [
-        { "key": "band", "label": "工作区域", "type": "select", "options": "bands", "default": "5" },
-        { "key": "deveui", "label": "DevEUI", "type": "hex", "size": 8, "default": "00:11:22:33:44:55:66:77" },
-        { "key": "appeui", "label": "AppEUI / JoinEUI", "type": "hex", "size": 8, "default": "01:01:01:01:01:01:01:01" },
-        { "key": "appkey", "label": "AppKey", "type": "hex", "size": 16, "default": "2B:7E:15:16:28:AE:D2:A6:AB:F7:15:88:09:CF:4F:3C" },
-        { "key": "set_nwkkey", "label": "同时写入 NwkKey（LoRaWAN 1.1）", "type": "bool", "default": false },
-        { "key": "nwkkey", "label": "NwkKey", "type": "hex", "size": 16, "default": "2B:7E:15:16:28:AE:D2:A6:AB:F7:15:88:09:CF:4F:3C" },
-        { "key": "cls", "label": "入网后 Class", "type": "select", "options": "classes", "default": "A" },
-        { "key": "adr", "label": "ADR", "type": "select", "options": [ { "value": "1", "label": "开启" }, { "value": "0", "label": "关闭" } ], "default": "1" },
-        { "key": "dr", "label": "DR（ADR 关闭时生效）", "type": "int", "min": 0, "max": 7, "default": "5" }
+        {
+          "key": "band",
+          "label": "工作区域",
+          "type": "select",
+          "options": "bands",
+          "default": "5"
+        },
+        {
+          "key": "deveui",
+          "label": "DevEUI",
+          "type": "hex",
+          "size": 8,
+          "default": "00:11:22:33:44:55:66:77"
+        },
+        {
+          "key": "appeui",
+          "label": "AppEUI / JoinEUI",
+          "type": "hex",
+          "size": 8,
+          "default": "01:01:01:01:01:01:01:01"
+        },
+        {
+          "key": "appkey",
+          "label": "AppKey",
+          "type": "hex",
+          "size": 16,
+          "default": "2B:7E:15:16:28:AE:D2:A6:AB:F7:15:88:09:CF:4F:3C"
+        },
+        {
+          "key": "set_nwkkey",
+          "label": "同时写入 NwkKey（LoRaWAN 1.1）",
+          "type": "bool",
+          "default": false
+        },
+        {
+          "key": "nwkkey",
+          "label": "NwkKey",
+          "type": "hex",
+          "size": 16,
+          "default": "2B:7E:15:16:28:AE:D2:A6:AB:F7:15:88:09:CF:4F:3C"
+        },
+        {
+          "key": "cls",
+          "label": "入网后 Class",
+          "type": "select",
+          "options": "classes",
+          "default": "A"
+        },
+        {
+          "key": "adr",
+          "label": "ADR",
+          "type": "select",
+          "options": [
+            {
+              "value": "1",
+              "label": "开启"
+            },
+            {
+              "value": "0",
+              "label": "关闭"
+            }
+          ],
+          "default": "1"
+        },
+        {
+          "key": "dr",
+          "label": "DR（ADR 关闭时生效）",
+          "type": "int",
+          "min": 0,
+          "max": 7,
+          "default": "5"
+        }
       ],
       "steps": [
-        { "cmd": "AT", "label": "链路自检", "delay": 0.3, "expect": "OK" },
-        { "cmd": "AT+BAND={band}", "label": "切到 {band|band_name}", "delay": 0.4, "expect": "OK" },
-        { "cmd": "AT+DEUI={deveui|key:8}", "label": "写 DevEUI", "delay": 0.3, "expect": "OK" },
-        { "cmd": "AT+APPEUI={appeui|key:8}", "label": "写 AppEUI", "delay": 0.3, "expect": "OK" },
-        { "cmd": "AT+APPKEY={appkey|key:16}", "label": "写 AppKey", "delay": 0.3, "expect": "OK" },
-        { "cmd": "AT+NWKKEY={nwkkey|key:16}", "label": "写 NwkKey", "delay": 0.3, "expect": "OK", "when": "set_nwkkey" },
-        { "cmd": "AT+RX2DR={rx2dr|rx2:dr|default:0}", "label": "RX2 速率（随频段）", "delay": 0.3, "expect": "OK" },
-        { "cmd": "AT+RX2FQ={rx2freq|rx2:freq|default:0}", "label": "RX2 频率（随频段）", "delay": 0.3, "expect": "OK" },
-        { "cmd": "AT+ADR={adr}", "label": "ADR 开关", "delay": 0.3, "expect": "OK" },
-        { "cmd": "AT+DR={dr}", "label": "固定 DR", "delay": 0.3, "expect": "OK", "when": "adr==0" },
-        { "cmd": "AT+CLASS={cls}", "label": "设置 Class", "delay": 0.3, "expect": "OK", "when": "cls!=A" },
-        { "cmd": "AT+JOIN=1", "label": "发起 OTAA 入网", "delay": 0.6, "wait_event": 5, "expect": "OK", "note": "等待 +EVT:JOINED（约 2 秒）" },
-        { "cmd": "AT+CS", "label": "保存上下文", "delay": 0.5, "expect": "OK", "note": "入网成功后立即存 NVM" }
+        {
+          "cmd": "AT",
+          "label": "链路自检",
+          "delay": 0.3,
+          "expect": "OK"
+        },
+        {
+          "cmd": "AT+BAND={band}",
+          "label": "切到 {band|band_name}",
+          "delay": 0.4,
+          "expect": "OK"
+        },
+        {
+          "cmd": "AT+DEUI={deveui|key:8}",
+          "label": "写 DevEUI",
+          "delay": 0.3,
+          "expect": "OK"
+        },
+        {
+          "cmd": "AT+APPEUI={appeui|key:8}",
+          "label": "写 AppEUI",
+          "delay": 0.3,
+          "expect": "OK"
+        },
+        {
+          "cmd": "AT+APPKEY={appkey|key:16}",
+          "label": "写 AppKey",
+          "delay": 0.3,
+          "expect": "OK"
+        },
+        {
+          "cmd": "AT+NWKKEY={nwkkey|key:16}",
+          "label": "写 NwkKey",
+          "delay": 0.3,
+          "expect": "OK",
+          "when": "set_nwkkey"
+        },
+        {
+          "cmd": "AT+RX2DR={rx2dr|rx2:dr|default:0}",
+          "label": "RX2 速率（随频段）",
+          "delay": 0.3,
+          "expect": "OK"
+        },
+        {
+          "cmd": "AT+RX2FQ={rx2freq|rx2:freq|default:0}",
+          "label": "RX2 频率（随频段）",
+          "delay": 0.3,
+          "expect": "OK"
+        },
+        {
+          "cmd": "AT+ADR={adr}",
+          "label": "ADR 开关",
+          "delay": 0.3,
+          "expect": "OK"
+        },
+        {
+          "cmd": "AT+DR={dr}",
+          "label": "固定 DR",
+          "delay": 0.3,
+          "expect": "OK",
+          "when": "adr==0"
+        },
+        {
+          "cmd": "AT+CLASS={cls}",
+          "label": "设置 Class",
+          "delay": 0.3,
+          "expect": "OK",
+          "when": "cls!=A"
+        },
+        {
+          "cmd": "AT+JOIN=1",
+          "label": "发起 OTAA 入网",
+          "delay": 0.6,
+          "wait_event": 5,
+          "expect": "OK",
+          "note": "等待 +EVT:JOINED（约 2 秒）",
+          "timeout": 30
+        },
+        {
+          "cmd": "AT+CS",
+          "label": "保存上下文",
+          "delay": 0.5,
+          "expect": "OK",
+          "note": "入网成功后立即存 NVM"
+        }
       ]
     },
     {
@@ -184,18 +1193,74 @@
       "accent": "violet",
       "desc": "演示 hexraw 修饰符（去掉分隔符直接拼接）。",
       "fields": [
-        { "key": "band", "label": "工作区域", "type": "select", "options": "bands", "default": "5" },
-        { "key": "daddr", "label": "DevAddr", "type": "hex", "size": 4, "default": "01:02:0A:0B" },
-        { "key": "nwkskey", "label": "NwkSKey", "type": "hex", "size": 16, "default": "AA:BB:CC:DD:00:11:22:33:AA:BB:CC:DD:00:11:22:33" },
-        { "key": "appskey", "label": "AppSKey", "type": "hex", "size": 16, "default": "AA:BB:CC:DD:00:11:22:33:AA:BB:CC:DD:00:11:22:33" }
+        {
+          "key": "band",
+          "label": "工作区域",
+          "type": "select",
+          "options": "bands",
+          "default": "5"
+        },
+        {
+          "key": "daddr",
+          "label": "DevAddr",
+          "type": "hex",
+          "size": 4,
+          "default": "01:02:0A:0B"
+        },
+        {
+          "key": "nwkskey",
+          "label": "NwkSKey",
+          "type": "hex",
+          "size": 16,
+          "default": "AA:BB:CC:DD:00:11:22:33:AA:BB:CC:DD:00:11:22:33"
+        },
+        {
+          "key": "appskey",
+          "label": "AppSKey",
+          "type": "hex",
+          "size": 16,
+          "default": "AA:BB:CC:DD:00:11:22:33:AA:BB:CC:DD:00:11:22:33"
+        }
       ],
       "steps": [
-        { "cmd": "AT+BAND={band}", "label": "选择区域", "delay": 0.4, "expect": "OK" },
-        { "cmd": "AT+DADDR={daddr|key:4}", "label": "写 DevAddr", "delay": 0.3, "expect": "OK" },
-        { "cmd": "AT+NWKSKEY={nwkskey|key:16}", "label": "写 NwkSKey", "delay": 0.3, "expect": "OK" },
-        { "cmd": "AT+APPSKEY={appskey|key:16}", "label": "写 AppSKey", "delay": 0.3, "expect": "OK" },
-        { "cmd": "AT+JOIN=0", "label": "ABP 激活", "delay": 0.5, "wait_event": 3, "expect": "OK" },
-        { "cmd": "AT+CS", "label": "保存上下文", "delay": 0.5, "expect": "OK" }
+        {
+          "cmd": "AT+BAND={band}",
+          "label": "选择区域",
+          "delay": 0.4,
+          "expect": "OK"
+        },
+        {
+          "cmd": "AT+DADDR={daddr|key:4}",
+          "label": "写 DevAddr",
+          "delay": 0.3,
+          "expect": "OK"
+        },
+        {
+          "cmd": "AT+NWKSKEY={nwkskey|key:16}",
+          "label": "写 NwkSKey",
+          "delay": 0.3,
+          "expect": "OK"
+        },
+        {
+          "cmd": "AT+APPSKEY={appskey|key:16}",
+          "label": "写 AppSKey",
+          "delay": 0.3,
+          "expect": "OK"
+        },
+        {
+          "cmd": "AT+JOIN=0",
+          "label": "ABP 激活",
+          "delay": 0.5,
+          "wait_event": 3,
+          "expect": "OK",
+          "timeout": 30
+        },
+        {
+          "cmd": "AT+CS",
+          "label": "保存上下文",
+          "delay": 0.5,
+          "expect": "OK"
+        }
       ]
     },
     {
@@ -205,13 +1270,55 @@
       "accent": "amber",
       "desc": "演示 hex 修饰符：输入框里敲 hello，自动转 68656C6C6F。confirmed 上行时等待 +EVT:SEND_CONFIRMED。",
       "fields": [
-        { "key": "port", "label": "FPort（1~223）", "type": "int", "min": 1, "max": 223, "default": "10" },
-        { "key": "ack", "label": "需要确认", "type": "select", "options": [ { "value": "0", "label": "unconfirmed" }, { "value": "1", "label": "confirmed" } ], "default": "0" },
-        { "key": "text", "label": "文本载荷（自动转 HEX）", "type": "text", "default": "hello" }
+        {
+          "key": "port",
+          "label": "FPort（1~223）",
+          "type": "int",
+          "min": 1,
+          "max": 223,
+          "default": "10"
+        },
+        {
+          "key": "ack",
+          "label": "需要确认",
+          "type": "select",
+          "options": [
+            {
+              "value": "0",
+              "label": "unconfirmed"
+            },
+            {
+              "value": "1",
+              "label": "confirmed"
+            }
+          ],
+          "default": "0"
+        },
+        {
+          "key": "text",
+          "label": "文本载荷（自动转 HEX）",
+          "type": "text",
+          "default": "hello"
+        }
       ],
       "steps": [
-        { "cmd": "AT+JOIN=1", "label": "确保已入网", "delay": 0.4, "wait_event": 4, "expect": "OK", "note": "已入网则直接 OK" },
-        { "cmd": "AT+SEND={port}:{ack}:{text|hex}", "label": "发送 {text|upper}", "delay": 0.6, "wait_event": 3, "expect": "OK", "note": "confirmed 时等待 +EVT:SEND_CONFIRMED" }
+        {
+          "cmd": "AT+JOIN=1",
+          "label": "确保已入网",
+          "delay": 0.4,
+          "wait_event": 4,
+          "expect": "OK",
+          "note": "已入网则直接 OK",
+          "timeout": 30
+        },
+        {
+          "cmd": "AT+SEND={port}:{ack}:{text|hex}",
+          "label": "发送 {text|upper}",
+          "delay": 0.6,
+          "wait_event": 3,
+          "expect": "OK",
+          "note": "confirmed 时等待 +EVT:SEND_CONFIRMED"
+        }
       ]
     },
     {
@@ -221,12 +1328,37 @@
       "accent": "green",
       "desc": "入网后切 Class C，随后随时可收下行。演示 wait_event 等待异步事件。",
       "fields": [
-        { "key": "port", "label": "FPort", "type": "int", "min": 1, "max": 223, "default": "10" }
+        {
+          "key": "port",
+          "label": "FPort",
+          "type": "int",
+          "min": 1,
+          "max": 223,
+          "default": "10"
+        }
       ],
       "steps": [
-        { "cmd": "AT+JOIN=1", "label": "OTAA 入网", "delay": 0.5, "wait_event": 5, "expect": "OK" },
-        { "cmd": "AT+CLASS=C", "label": "切换 Class C", "delay": 0.5, "expect": "OK", "note": "成功返回 +EVT:SWITCH_TO_CLASS_C" },
-        { "cmd": "AT+SEND={port}:0:01", "label": "触发一次上行打开窗口", "delay": 0.5, "expect": "OK" }
+        {
+          "cmd": "AT+JOIN=1",
+          "label": "OTAA 入网",
+          "delay": 0.5,
+          "wait_event": 5,
+          "expect": "OK",
+          "timeout": 30
+        },
+        {
+          "cmd": "AT+CLASS=C",
+          "label": "切换 Class C",
+          "delay": 0.5,
+          "expect": "OK",
+          "note": "成功返回 +EVT:SWITCH_TO_CLASS_C"
+        },
+        {
+          "cmd": "AT+SEND={port}:0:01",
+          "label": "触发一次上行打开窗口",
+          "delay": 0.5,
+          "expect": "OK"
+        }
       ]
     },
     {
@@ -237,13 +1369,49 @@
       "desc": "读取全部窗口参数，并用 AN5481 风格的 =? 查询（注意不是 ?，那是帮助）。",
       "fields": [],
       "steps": [
-        { "cmd": "AT+RX2DR=?", "label": "RX2 速率", "delay": 0.3, "expect": "OK" },
-        { "cmd": "AT+RX2FQ=?", "label": "RX2 频率", "delay": 0.3, "expect": "OK" },
-        { "cmd": "AT+RX1DL=?", "label": "RX1 延迟", "delay": 0.3, "expect": "OK" },
-        { "cmd": "AT+RX2DL=?", "label": "RX2 延迟", "delay": 0.3, "expect": "OK" },
-        { "cmd": "AT+JN1DL=?", "label": "Join RX1 延迟", "delay": 0.3, "expect": "OK" },
-        { "cmd": "AT+JN2DL=?", "label": "Join RX2 延迟", "delay": 0.3, "expect": "OK" },
-        { "cmd": "AT+LINKC", "label": "搭载链路检查", "delay": 0.3, "expect": "OK", "note": "下次上行返回链路余量" }
+        {
+          "cmd": "AT+RX2DR=?",
+          "label": "RX2 速率",
+          "delay": 0.3,
+          "expect": "OK"
+        },
+        {
+          "cmd": "AT+RX2FQ=?",
+          "label": "RX2 频率",
+          "delay": 0.3,
+          "expect": "OK"
+        },
+        {
+          "cmd": "AT+RX1DL=?",
+          "label": "RX1 延迟",
+          "delay": 0.3,
+          "expect": "OK"
+        },
+        {
+          "cmd": "AT+RX2DL=?",
+          "label": "RX2 延迟",
+          "delay": 0.3,
+          "expect": "OK"
+        },
+        {
+          "cmd": "AT+JN1DL=?",
+          "label": "Join RX1 延迟",
+          "delay": 0.3,
+          "expect": "OK"
+        },
+        {
+          "cmd": "AT+JN2DL=?",
+          "label": "Join RX2 延迟",
+          "delay": 0.3,
+          "expect": "OK"
+        },
+        {
+          "cmd": "AT+LINKC",
+          "label": "搭载链路检查",
+          "delay": 0.3,
+          "expect": "OK",
+          "note": "下次上行返回链路余量"
+        }
       ]
     },
     {
@@ -253,14 +1421,47 @@
       "accent": "red",
       "desc": "TCONF 12 段参数 + 定量发射。合规实验室场景使用，注意占空比法规。",
       "fields": [
-        { "key": "tconf", "label": "TCONF（freq:pow:bw:sf:cr:lna:pa:mod:paylen:freqdev:lowdropt:BT）", "type": "text", "default": "868000000:14:125:12:4/5:0:0:1:255:0:0:0" },
-        { "key": "count", "label": "发送包数", "type": "int", "min": 1, "max": 65535, "default": "100" }
+        {
+          "key": "tconf",
+          "label": "TCONF（freq:pow:bw:sf:cr:lna:pa:mod:paylen:freqdev:lowdropt:BT）",
+          "type": "text",
+          "default": "868000000:14:125:12:4/5:0:0:1:255:0:0:0"
+        },
+        {
+          "key": "count",
+          "label": "发送包数",
+          "type": "int",
+          "min": 1,
+          "max": 65535,
+          "default": "100"
+        }
       ],
       "steps": [
-        { "cmd": "AT+TCONF={tconf}", "label": "配置射频参数", "delay": 0.4, "expect": "OK" },
-        { "cmd": "AT+TCONF=?", "label": "回读确认", "delay": 0.4, "expect": "OK" },
-        { "cmd": "AT+TTX={count}", "label": "发射 {count} 包", "delay": 0.6, "wait_event": 10, "expect": "OK" },
-        { "cmd": "AT+TOFF", "label": "停止测试", "delay": 0.3, "expect": "OK" }
+        {
+          "cmd": "AT+TCONF={tconf}",
+          "label": "配置射频参数",
+          "delay": 0.4,
+          "expect": "OK"
+        },
+        {
+          "cmd": "AT+TCONF=?",
+          "label": "回读确认",
+          "delay": 0.4,
+          "expect": "OK"
+        },
+        {
+          "cmd": "AT+TTX={count}",
+          "label": "发射 {count} 包",
+          "delay": 0.6,
+          "wait_event": 10,
+          "expect": "OK"
+        },
+        {
+          "cmd": "AT+TOFF",
+          "label": "停止测试",
+          "delay": 0.3,
+          "expect": "OK"
+        }
       ]
     },
     {
@@ -270,13 +1471,41 @@
       "accent": "red",
       "desc": "配合发射端统计丢包率。",
       "fields": [
-        { "key": "tconf", "label": "TCONF", "type": "text", "default": "868000000:14:125:12:4/5:0:0:1:255:0:0:0" },
-        { "key": "count", "label": "接收包数", "type": "int", "min": 1, "max": 65535, "default": "100" }
+        {
+          "key": "tconf",
+          "label": "TCONF",
+          "type": "text",
+          "default": "868000000:14:125:12:4/5:0:0:1:255:0:0:0"
+        },
+        {
+          "key": "count",
+          "label": "接收包数",
+          "type": "int",
+          "min": 1,
+          "max": 65535,
+          "default": "100"
+        }
       ],
       "steps": [
-        { "cmd": "AT+TCONF={tconf}", "label": "配置射频参数", "delay": 0.4, "expect": "OK" },
-        { "cmd": "AT+TRX={count}", "label": "接收 {count} 包并统计 PER", "delay": 0.6, "wait_event": 15, "expect": "OK" },
-        { "cmd": "AT+TOFF", "label": "停止测试", "delay": 0.3, "expect": "OK" }
+        {
+          "cmd": "AT+TCONF={tconf}",
+          "label": "配置射频参数",
+          "delay": 0.4,
+          "expect": "OK"
+        },
+        {
+          "cmd": "AT+TRX={count}",
+          "label": "接收 {count} 包并统计 PER",
+          "delay": 0.6,
+          "wait_event": 15,
+          "expect": "OK"
+        },
+        {
+          "cmd": "AT+TOFF",
+          "label": "停止测试",
+          "delay": 0.3,
+          "expect": "OK"
+        }
       ]
     },
     {
@@ -287,17 +1516,72 @@
       "desc": "一次性读回所有关键参数，出报告。",
       "fields": [],
       "steps": [
-        { "cmd": "AT+VER=?", "label": "版本", "delay": 0.3, "expect": "OK" },
-        { "cmd": "AT+BAT=?", "label": "电池", "delay": 0.3, "expect": "OK" },
-        { "cmd": "AT+DEUI=?", "label": "DevEUI", "delay": 0.3, "expect": "OK" },
-        { "cmd": "AT+APPEUI=?", "label": "AppEUI", "delay": 0.3, "expect": "OK" },
-        { "cmd": "AT+BAND=?", "label": "区域", "delay": 0.3, "expect": "OK" },
-        { "cmd": "AT+CLASS=?", "label": "Class", "delay": 0.3, "expect": "OK" },
-        { "cmd": "AT+ADR=?", "label": "ADR", "delay": 0.3, "expect": "OK" },
-        { "cmd": "AT+DR=?", "label": "DR", "delay": 0.3, "expect": "OK" },
-        { "cmd": "AT+TXP=?", "label": "功率", "delay": 0.3, "expect": "OK" },
-        { "cmd": "AT+VL=?", "label": "日志等级", "delay": 0.3, "expect": "OK" },
-        { "cmd": "AT+LTIME=?", "label": "本地时间", "delay": 0.3, "expect": "OK" }
+        {
+          "cmd": "AT+VER=?",
+          "label": "版本",
+          "delay": 0.3,
+          "expect": "OK"
+        },
+        {
+          "cmd": "AT+BAT=?",
+          "label": "电池",
+          "delay": 0.3,
+          "expect": "OK"
+        },
+        {
+          "cmd": "AT+DEUI=?",
+          "label": "DevEUI",
+          "delay": 0.3,
+          "expect": "OK"
+        },
+        {
+          "cmd": "AT+APPEUI=?",
+          "label": "AppEUI",
+          "delay": 0.3,
+          "expect": "OK"
+        },
+        {
+          "cmd": "AT+BAND=?",
+          "label": "区域",
+          "delay": 0.3,
+          "expect": "OK"
+        },
+        {
+          "cmd": "AT+CLASS=?",
+          "label": "Class",
+          "delay": 0.3,
+          "expect": "OK"
+        },
+        {
+          "cmd": "AT+ADR=?",
+          "label": "ADR",
+          "delay": 0.3,
+          "expect": "OK"
+        },
+        {
+          "cmd": "AT+DR=?",
+          "label": "DR",
+          "delay": 0.3,
+          "expect": "OK"
+        },
+        {
+          "cmd": "AT+TXP=?",
+          "label": "功率",
+          "delay": 0.3,
+          "expect": "OK"
+        },
+        {
+          "cmd": "AT+VL=?",
+          "label": "日志等级",
+          "delay": 0.3,
+          "expect": "OK"
+        },
+        {
+          "cmd": "AT+LTIME=?",
+          "label": "本地时间",
+          "delay": 0.3,
+          "expect": "OK"
+        }
       ]
     },
     {
@@ -307,23 +1591,88 @@
       "accent": "red",
       "desc": "擦除 NVM 上下文。密钥会清空，慎重！",
       "fields": [
-        { "key": "verbose", "label": "重启后日志等级", "type": "select", "options": "verbose", "default": "2" }
+        {
+          "key": "verbose",
+          "label": "重启后日志等级",
+          "type": "select",
+          "options": "verbose",
+          "default": "2"
+        }
       ],
       "steps": [
-        { "cmd": "AT+VL={verbose}", "label": "预设日志等级", "delay": 0.3, "expect": "OK" },
-        { "cmd": "AT+RFS", "label": "擦除并复位", "delay": 1.0, "expect": "OK", "note": "模组重启后打印版本横幅" }
+        {
+          "cmd": "AT+VL={verbose}",
+          "label": "预设日志等级",
+          "delay": 0.3,
+          "expect": "OK"
+        },
+        {
+          "cmd": "AT+RFS",
+          "label": "擦除并复位",
+          "delay": 1.0,
+          "expect": "OK",
+          "note": "模组重启后打印版本横幅"
+        }
       ]
     }
   ],
   "quick_actions": [
-    { "id": "at_check", "name": "链路自检", "icon": "link", "sub": "AT", "cmd": "AT" },
-    { "id": "version", "name": "版本信息", "icon": "info", "sub": "AT+VER=?", "cmd": "AT+VER=?" },
-    { "id": "battery", "name": "电池电量", "icon": "battery", "sub": "AT+BAT=?", "cmd": "AT+BAT=?" },
-    { "id": "read_keys", "name": "读取三元组", "icon": "key-round", "sub": "DEUI / APPEUI / APPKEY", "cmd": "AT+DEUI=?" },
-    { "id": "set_class", "name": "切 Class C", "icon": "arrow-down-square", "sub": "AT+CLASS=C", "cmd": "AT+CLASS=C" },
-    { "id": "send_uplink", "name": "发送 Hello", "icon": "send", "sub": "port 10 unconfirmed", "cmd": "AT+SEND=10:0:68656C6C6F" },
-    { "id": "join_otaa", "name": "OTAA 入网", "icon": "radio-tower", "sub": "AT+JOIN=1", "cmd": "AT+JOIN=1" },
-    { "id": "rf_off", "name": "停止射频测试", "icon": "square", "sub": "AT+TOFF", "cmd": "AT+TOFF" }
+    {
+      "id": "at_check",
+      "name": "链路自检",
+      "icon": "link",
+      "sub": "AT",
+      "cmd": "AT"
+    },
+    {
+      "id": "version",
+      "name": "版本信息",
+      "icon": "info",
+      "sub": "AT+VER=?",
+      "cmd": "AT+VER=?"
+    },
+    {
+      "id": "battery",
+      "name": "电池电量",
+      "icon": "battery",
+      "sub": "AT+BAT=?",
+      "cmd": "AT+BAT=?"
+    },
+    {
+      "id": "read_keys",
+      "name": "读取三元组",
+      "icon": "key-round",
+      "sub": "DEUI / APPEUI / APPKEY",
+      "cmd": "AT+DEUI=?"
+    },
+    {
+      "id": "set_class",
+      "name": "切 Class C",
+      "icon": "arrow-down-square",
+      "sub": "AT+CLASS=C",
+      "cmd": "AT+CLASS=C"
+    },
+    {
+      "id": "send_uplink",
+      "name": "发送 Hello",
+      "icon": "send",
+      "sub": "port 10 unconfirmed",
+      "cmd": "AT+SEND=10:0:68656C6C6F"
+    },
+    {
+      "id": "join_otaa",
+      "name": "OTAA 入网",
+      "icon": "radio-tower",
+      "sub": "AT+JOIN=1",
+      "cmd": "AT+JOIN=1"
+    },
+    {
+      "id": "rf_off",
+      "name": "停止射频测试",
+      "icon": "square",
+      "sub": "AT+TOFF",
+      "cmd": "AT+TOFF"
+    }
   ],
   "suites": [
     {
@@ -332,11 +1681,44 @@
       "icon": "plug-zap",
       "desc": "链路与信息类指令冒烟",
       "cases": [
-        { "id": "B01", "name": "AT 自检", "cmd": "AT", "expect": "OK", "timeout": 3, "note": "最基础的连通性" },
-        { "id": "B02", "name": "帮助列表", "cmd": "AT?", "expect": "OK", "timeout": 4 },
-        { "id": "B03", "name": "读版本", "cmd": "AT+VER=?", "expect": "OK", "timeout": 3, "contains": "VERSION" },
-        { "id": "B04", "name": "读电池", "cmd": "AT+BAT=?", "expect": "OK", "timeout": 3 },
-        { "id": "B05", "name": "读本地时间", "cmd": "AT+LTIME=?", "expect": "OK", "timeout": 3, "contains": "LTIME" }
+        {
+          "id": "B01",
+          "name": "AT 自检",
+          "cmd": "AT",
+          "expect": "OK",
+          "timeout": 3,
+          "note": "最基础的连通性"
+        },
+        {
+          "id": "B02",
+          "name": "帮助列表",
+          "cmd": "AT?",
+          "expect": "OK",
+          "timeout": 4
+        },
+        {
+          "id": "B03",
+          "name": "读版本",
+          "cmd": "AT+VER=?",
+          "expect": "OK",
+          "timeout": 3,
+          "contains": "VERSION"
+        },
+        {
+          "id": "B04",
+          "name": "读电池",
+          "cmd": "AT+BAT=?",
+          "expect": "OK",
+          "timeout": 3
+        },
+        {
+          "id": "B05",
+          "name": "读本地时间",
+          "cmd": "AT+LTIME=?",
+          "expect": "OK",
+          "timeout": 3,
+          "contains": "LTIME"
+        }
       ]
     },
     {
@@ -345,10 +1727,45 @@
       "icon": "sliders-horizontal",
       "desc": "演示 value_in 与 verify 回读断言",
       "cases": [
-        { "id": "P01", "name": "日志等级取值合法", "cmd": "AT+VL=?", "expect": "OK", "timeout": 3, "value_in": ["0", "1", "2", "3"] },
-        { "id": "P02", "name": "设日志等级 3 并回读", "cmd": "AT+VL=3", "expect": "OK", "timeout": 3, "verify": { "cmd": "AT+VL=?", "contains": "3" } },
-        { "id": "P03", "name": "非法 DR 应被拒", "cmd": "AT+DR=99", "expect": "AT_PARAM_ERROR", "timeout": 3, "note": "越界参数必须返回参数错误" },
-        { "id": "P04", "name": "恢复日志等级 2", "cmd": "AT+VL=2", "expect": "OK", "timeout": 3 }
+        {
+          "id": "P01",
+          "name": "日志等级取值合法",
+          "cmd": "AT+VL=?",
+          "expect": "OK",
+          "timeout": 3,
+          "value_in": [
+            "0",
+            "1",
+            "2",
+            "3"
+          ]
+        },
+        {
+          "id": "P02",
+          "name": "设日志等级 3 并回读",
+          "cmd": "AT+VL=3",
+          "expect": "OK",
+          "timeout": 3,
+          "verify": {
+            "cmd": "AT+VL=?",
+            "contains": "3"
+          }
+        },
+        {
+          "id": "P03",
+          "name": "非法 DR 应被拒",
+          "cmd": "AT+DR=99",
+          "expect": "AT_PARAM_ERROR",
+          "timeout": 3,
+          "note": "越界参数必须返回参数错误"
+        },
+        {
+          "id": "P04",
+          "name": "恢复日志等级 2",
+          "cmd": "AT+VL=2",
+          "expect": "OK",
+          "timeout": 3
+        }
       ]
     },
     {
@@ -357,11 +1774,46 @@
       "icon": "key-round",
       "desc": "写入后回读比对",
       "cases": [
-        { "id": "K01", "name": "读 DevEUI", "cmd": "AT+DEUI=?", "expect": "OK", "timeout": 3 },
-        { "id": "K02", "name": "写 DevEUI", "cmd": "AT+DEUI=00:11:22:33:44:55:66:77", "expect": "OK", "timeout": 3, "verify": { "cmd": "AT+DEUI=?", "contains": "00:11:22:33:44:55:66:77" } },
-        { "id": "K03", "name": "读 AppKey", "cmd": "AT+APPKEY=?", "expect": "OK", "timeout": 3 },
-        { "id": "K04", "name": "非法短密钥应被拒", "cmd": "AT+APPKEY=AABB", "expect": "AT_PARAM_ERROR", "timeout": 3, "note": "密钥长度不足 16 字节" },
-        { "id": "K05", "name": "读网络 ID", "cmd": "AT+NWKID=?", "expect": "OK", "timeout": 3 }
+        {
+          "id": "K01",
+          "name": "读 DevEUI",
+          "cmd": "AT+DEUI=?",
+          "expect": "OK",
+          "timeout": 3
+        },
+        {
+          "id": "K02",
+          "name": "写 DevEUI",
+          "cmd": "AT+DEUI=00:11:22:33:44:55:66:77",
+          "expect": "OK",
+          "timeout": 3,
+          "verify": {
+            "cmd": "AT+DEUI=?",
+            "contains": "00:11:22:33:44:55:66:77"
+          }
+        },
+        {
+          "id": "K03",
+          "name": "读 AppKey",
+          "cmd": "AT+APPKEY=?",
+          "expect": "OK",
+          "timeout": 3
+        },
+        {
+          "id": "K04",
+          "name": "非法短密钥应被拒",
+          "cmd": "AT+APPKEY=AABB",
+          "expect": "AT_PARAM_ERROR",
+          "timeout": 3,
+          "note": "密钥长度不足 16 字节"
+        },
+        {
+          "id": "K05",
+          "name": "读网络 ID",
+          "cmd": "AT+NWKID=?",
+          "expect": "OK",
+          "timeout": 3
+        }
       ]
     },
     {
@@ -370,11 +1822,43 @@
       "icon": "radio-tower",
       "desc": "端到端激活 + 发送",
       "cases": [
-        { "id": "J01", "name": "OTAA 入网", "cmd": "AT+JOIN=1", "expect": "OK", "timeout": 8, "note": "等待 +EVT:JOINED" },
-        { "id": "J02", "name": "读 Class", "cmd": "AT+CLASS=?", "expect": "OK", "timeout": 3 },
-        { "id": "J03", "name": "发送 unconfirmed 上行", "cmd": "AT+SEND=10:0:68656C6C6F", "expect": "OK", "timeout": 5 },
-        { "id": "J04", "name": "发送 confirmed 上行", "cmd": "AT+SEND=10:1:31323334", "expect": "OK", "timeout": 6, "note": "追加 +EVT:SEND_CONFIRMED" },
-        { "id": "J05", "name": "搭载链路检查", "cmd": "AT+LINKC", "expect": "OK", "timeout": 3 }
+        {
+          "id": "J01",
+          "name": "OTAA 入网",
+          "cmd": "AT+JOIN=1",
+          "expect": "OK",
+          "timeout": 8,
+          "note": "等待 +EVT:JOINED"
+        },
+        {
+          "id": "J02",
+          "name": "读 Class",
+          "cmd": "AT+CLASS=?",
+          "expect": "OK",
+          "timeout": 3
+        },
+        {
+          "id": "J03",
+          "name": "发送 unconfirmed 上行",
+          "cmd": "AT+SEND=10:0:68656C6C6F",
+          "expect": "OK",
+          "timeout": 5
+        },
+        {
+          "id": "J04",
+          "name": "发送 confirmed 上行",
+          "cmd": "AT+SEND=10:1:31323334",
+          "expect": "OK",
+          "timeout": 6,
+          "note": "追加 +EVT:SEND_CONFIRMED"
+        },
+        {
+          "id": "J05",
+          "name": "搭载链路检查",
+          "cmd": "AT+LINKC",
+          "expect": "OK",
+          "timeout": 3
+        }
       ]
     },
     {
@@ -383,9 +1867,28 @@
       "icon": "activity",
       "desc": "TCONF 配置与测试起停（无需真实发包）",
       "cases": [
-        { "id": "R01", "name": "写 TCONF", "cmd": "AT+TCONF=868000000:14:125:12:4/5:0:0:1:255:0:0:0", "expect": "OK", "timeout": 3 },
-        { "id": "R02", "name": "回读 TCONF", "cmd": "AT+TCONF=?", "expect": "OK", "timeout": 4, "contains": "Freq" },
-        { "id": "R03", "name": "停止射频", "cmd": "AT+TOFF", "expect": "OK", "timeout": 3 }
+        {
+          "id": "R01",
+          "name": "写 TCONF",
+          "cmd": "AT+TCONF=868000000:14:125:12:4/5:0:0:1:255:0:0:0",
+          "expect": "OK",
+          "timeout": 3
+        },
+        {
+          "id": "R02",
+          "name": "回读 TCONF",
+          "cmd": "AT+TCONF=?",
+          "expect": "OK",
+          "timeout": 4,
+          "contains": "Freq"
+        },
+        {
+          "id": "R03",
+          "name": "停止射频",
+          "cmd": "AT+TOFF",
+          "expect": "OK",
+          "timeout": 3
+        }
       ]
     },
     {
@@ -394,32 +1897,345 @@
       "icon": "database",
       "desc": "保存上下文",
       "cases": [
-        { "id": "N01", "name": "保存上下文", "cmd": "AT+CS", "expect": "OK", "timeout": 4, "note": "返回 NVM DATA STORED" }
+        {
+          "id": "N01",
+          "name": "保存上下文",
+          "cmd": "AT+CS",
+          "expect": "OK",
+          "timeout": 4,
+          "note": "返回 NVM DATA STORED"
+        }
       ]
     }
   ],
   "buttons": [
-    { "id": "btn-builtin-at", "name": "链路自检", "icon": "terminal", "color": "blue", "group": "常用", "commands": ["AT"], "delay": 0.3, "note": "确认 AT 链路可用", "builtin": true, "enabled": true, "created_at": 0, "updated_at": 0, "order": 0 },
-    { "id": "btn-builtin-ver", "name": "版本与电量", "icon": "info", "color": "teal", "group": "常用", "commands": ["AT+VER=?", "AT+BAT=?"], "delay": 0.3, "note": "固件版本 + 电池电压", "builtin": true, "enabled": true, "created_at": 0, "updated_at": 0, "order": 1 },
-    { "id": "btn-builtin-otaa", "name": "OTAA 入网", "icon": "radio-tower", "color": "violet", "group": "常用", "commands": ["AT+JOIN=1"], "delay": 0.5, "note": "等待 +EVT:JOINED", "builtin": true, "enabled": true, "created_at": 0, "updated_at": 0, "order": 2 },
-    { "id": "btn-builtin-send", "name": "发送 Hello", "icon": "send", "color": "amber", "group": "常用", "commands": ["AT+SEND=10:0:68656C6C6F"], "delay": 0.5, "note": "port 10 · unconfirmed", "builtin": true, "enabled": true, "created_at": 0, "updated_at": 0, "order": 3 },
-    { "id": "btn-builtin-save", "name": "保存上下文", "icon": "database", "color": "green", "group": "常用", "commands": ["AT+CS"], "delay": 0.5, "note": "写入 NVM", "builtin": true, "enabled": true, "created_at": 0, "updated_at": 0, "order": 4 },
-    { "id": "btn-builtin-reboot", "name": "重启模组", "icon": "rotate-cw", "color": "red", "group": "危险", "commands": ["ATZ"], "delay": 1.5, "note": "NVIC 复位", "builtin": true, "enabled": true, "created_at": 0, "updated_at": 0, "order": 5 },
-    { "id": "btn-custom-report", "name": "一键出体检报告", "icon": "clipboard-check", "color": "blue", "group": "自定义示例", "commands": ["AT+VER=?", "AT+BAT=?", "AT+DEUI=?", "AT+BAND=?", "AT+CLASS=?", "AT+ADR=?"], "delay": 0.4, "note": "自定义按钮示例：连续读取并生成报告（可在按钮页编辑/删除）", "builtin": false, "enabled": true, "created_at": 0, "updated_at": 0, "order": 6 }
+    {
+      "id": "btn-builtin-at",
+      "name": "链路自检",
+      "icon": "terminal",
+      "color": "blue",
+      "group": "常用",
+      "commands": [
+        "AT"
+      ],
+      "delay": 0.3,
+      "note": "确认 AT 链路可用",
+      "builtin": true,
+      "enabled": true,
+      "created_at": 0,
+      "updated_at": 0,
+      "order": 0
+    },
+    {
+      "id": "btn-builtin-ver",
+      "name": "版本与电量",
+      "icon": "info",
+      "color": "teal",
+      "group": "常用",
+      "commands": [
+        "AT+VER=?",
+        "AT+BAT=?"
+      ],
+      "delay": 0.3,
+      "note": "固件版本 + 电池电压",
+      "builtin": true,
+      "enabled": true,
+      "created_at": 0,
+      "updated_at": 0,
+      "order": 1
+    },
+    {
+      "id": "btn-builtin-otaa",
+      "name": "OTAA 入网",
+      "icon": "radio-tower",
+      "color": "violet",
+      "group": "常用",
+      "commands": [
+        "AT+JOIN=1"
+      ],
+      "delay": 0.5,
+      "note": "等待 +EVT:JOINED",
+      "builtin": true,
+      "enabled": true,
+      "created_at": 0,
+      "updated_at": 0,
+      "order": 2
+    },
+    {
+      "id": "btn-builtin-send",
+      "name": "发送 Hello",
+      "icon": "send",
+      "color": "amber",
+      "group": "常用",
+      "commands": [
+        "AT+SEND=10:0:68656C6C6F"
+      ],
+      "delay": 0.5,
+      "note": "port 10 · unconfirmed",
+      "builtin": true,
+      "enabled": true,
+      "created_at": 0,
+      "updated_at": 0,
+      "order": 3
+    },
+    {
+      "id": "btn-builtin-save",
+      "name": "保存上下文",
+      "icon": "database",
+      "color": "green",
+      "group": "常用",
+      "commands": [
+        "AT+CS"
+      ],
+      "delay": 0.5,
+      "note": "写入 NVM",
+      "builtin": true,
+      "enabled": true,
+      "created_at": 0,
+      "updated_at": 0,
+      "order": 4
+    },
+    {
+      "id": "btn-builtin-reboot",
+      "name": "重启模组",
+      "icon": "rotate-cw",
+      "color": "red",
+      "group": "危险",
+      "commands": [
+        "ATZ"
+      ],
+      "delay": 1.5,
+      "note": "NVIC 复位",
+      "builtin": true,
+      "enabled": true,
+      "created_at": 0,
+      "updated_at": 0,
+      "order": 5
+    },
+    {
+      "id": "btn-custom-report",
+      "name": "一键出体检报告",
+      "icon": "clipboard-check",
+      "color": "blue",
+      "group": "自定义示例",
+      "commands": [
+        "AT+VER=?",
+        "AT+BAT=?",
+        "AT+DEUI=?",
+        "AT+BAND=?",
+        "AT+CLASS=?",
+        "AT+ADR=?"
+      ],
+      "delay": 0.4,
+      "note": "自定义按钮示例：连续读取并生成报告（可在按钮页编辑/删除）",
+      "builtin": false,
+      "enabled": true,
+      "created_at": 0,
+      "updated_at": 0,
+      "order": 6
+    }
   ],
   "home": {
-    "intro": "这是全功能示例工程：不接硬件、切到串口页选择「虚拟设备」即可把所有功能跑一遍。每个一键配置卡片都标注了它演示的特性（字段联动 / 条件步骤 / 变量插值 / 事件等待），照着改就是你自己的配置集。",
+    "intro": "这是全功能示例工程：不接硬件、切到串口页选择「虚拟设备」即可把所有功能跑一遍。每个一键配置卡片都标注了它演示的特性（字段联动 / 条件步骤 / 变量插值 / 事件等待），照着改就是你自己的配置集。\n错误码库已随本 profile 内置（见 error_codes 字段），串口默认参数见 device.serial / serial_defaults，不再依赖代码内默认错误码集。",
     "pinned": [
-      { "kind": "button", "id": "btn-builtin-at" },
-      { "kind": "button", "id": "btn-builtin-ver" },
-      { "kind": "button", "id": "btn-builtin-otaa" },
-      { "kind": "button", "id": "btn-builtin-send" },
-      { "kind": "button", "id": "btn-builtin-save" },
-      { "kind": "preset", "id": "quick_check" },
-      { "kind": "preset", "id": "otaa_join" },
-      { "kind": "preset", "id": "checkup" },
-      { "kind": "suite", "id": "basic" },
-      { "kind": "suite", "id": "join" }
+      {
+        "kind": "button",
+        "id": "btn-builtin-at"
+      },
+      {
+        "kind": "button",
+        "id": "btn-builtin-ver"
+      },
+      {
+        "kind": "button",
+        "id": "btn-builtin-otaa"
+      },
+      {
+        "kind": "button",
+        "id": "btn-builtin-send"
+      },
+      {
+        "kind": "button",
+        "id": "btn-builtin-save"
+      },
+      {
+        "kind": "preset",
+        "id": "quick_check"
+      },
+      {
+        "kind": "preset",
+        "id": "otaa_join"
+      },
+      {
+        "kind": "preset",
+        "id": "checkup"
+      },
+      {
+        "kind": "suite",
+        "id": "basic"
+      },
+      {
+        "kind": "suite",
+        "id": "join"
+      }
     ]
+  },
+  "error_codes": [
+    {
+      "code": "OK",
+      "severity": "ok",
+      "type": "status",
+      "meaning": "指令执行成功，无错误。",
+      "hint": "继续下一条指令。"
+    },
+    {
+      "code": "AT_ERROR",
+      "severity": "err",
+      "type": "status",
+      "meaning": "通用错误：指令未被识别（拼写错误或固件不支持该指令）。",
+      "hint": "检查指令拼写与大小写；用 AT? 查看固件支持的指令列表。"
+    },
+    {
+      "code": "AT_PARAM_ERROR",
+      "severity": "err",
+      "type": "status",
+      "meaning": "参数错误：指令的参数取值或格式不合法。",
+      "hint": "核对参数范围与格式（如 KEY 为 16 字节十六进制、DR 为 0~7）。"
+    },
+    {
+      "code": "AT_BUSY_ERROR",
+      "severity": "warn",
+      "type": "status",
+      "meaning": "LoRa 网络繁忙（如正在发射/接收），指令未能完成。",
+      "hint": "可稍后重试；射频测试中需先 AT+TOFF 停止测试。"
+    },
+    {
+      "code": "AT_TEST_PARAM_OVERFLOW",
+      "severity": "err",
+      "type": "status",
+      "meaning": "参数过长，超出指令允许的最大长度。",
+      "hint": "缩短参数（如载荷超出最大包长）后重发。"
+    },
+    {
+      "code": "AT_NO_NETWORK_JOINED",
+      "severity": "err",
+      "type": "status",
+      "meaning": "LoRa 网络尚未入网，无法执行该操作（发送数据/切 Class 等）。",
+      "hint": "先执行 AT+JOIN 完成 OTAA/ABP 入网再重试。",
+      "alias": "AT_NO_NET_JOINED（Ra-09 固件短写形式）"
+    },
+    {
+      "code": "AT_NO_NET_JOINED",
+      "severity": "err",
+      "type": "status",
+      "meaning": "LoRa 网络尚未入网（Ra-09 固件短写形式）。",
+      "hint": "先执行 AT+JOIN 完成 OTAA/ABP 入网再重试。"
+    },
+    {
+      "code": "AT_RX_ERROR",
+      "severity": "err",
+      "type": "status",
+      "meaning": "接收错误：指令在传输中被破坏，固件未执行该指令。",
+      "hint": "按手册先发送一个空行 <CR><LF> 清空队列，再原样重发指令。",
+      "recover": "purge_crlf"
+    },
+    {
+      "code": "AT_DUTYCYCLE_RESTRICTED",
+      "severity": "warn",
+      "type": "status",
+      "meaning": "占空比限制：当前区域发射占空比已耗尽，指令被拒绝。",
+      "hint": "等待占空比窗口恢复，或关闭占空比管理（AT+DCS=1，测试场景）。"
+    },
+    {
+      "code": "AT_DUTYCYLE_RESTRICTED",
+      "severity": "warn",
+      "type": "status",
+      "meaning": "占空比限制（固件历史拼写形式）。",
+      "hint": "同 AT_DUTYCYCLE_RESTRICTED。"
+    },
+    {
+      "code": "AT_CRYPTO_ERROR",
+      "severity": "fatal",
+      "type": "status",
+      "meaning": "加密计算失败：会话密钥或加解密上下文异常。",
+      "hint": "多为密钥不匹配/上下文损坏，重写密钥并 AT+RFS 恢复出厂后重新入网。"
+    },
+    {
+      "code": "AT_NO_CLASS_B_ENABLE",
+      "severity": "err",
+      "type": "status",
+      "meaning": "设备不支持或未启用 Class B，无法切换。",
+      "hint": "确认网关下发 Beacon/PingSlot 配置且固件开启 Class B 支持。"
+    },
+    {
+      "code": "AT_ERROR_UNKNOWN",
+      "severity": "err",
+      "type": "status",
+      "meaning": "未知错误（固件内部未分类）。",
+      "hint": "读取详细日志复现步骤；尝试复位（ATZ）后重试。"
+    },
+    {
+      "code": "+EVT:JOINED",
+      "severity": "ok",
+      "type": "event",
+      "meaning": "OTAA 入网成功。",
+      "hint": "可以开始发送数据（AT+SEND）。"
+    },
+    {
+      "code": "+EVT:JOIN FAILED",
+      "severity": "err",
+      "type": "event",
+      "meaning": "入网失败：ID/密钥错误、网关未收到上行、或下行未收到/解密失败。",
+      "hint": "核对 DevEUI/AppEUI/AppKey 与网关侧配置，重新调用 AT+JOIN。"
+    },
+    {
+      "code": "+EVT:SEND_CONFIRMED",
+      "severity": "ok",
+      "type": "event",
+      "meaning": "确认帧已被网关 ACK。",
+      "hint": "链路上行正常。"
+    },
+    {
+      "code": "+EVT:BEACON_NOT_RECEIVED",
+      "severity": "warn",
+      "type": "event",
+      "meaning": "Class B 信标窗口未收到信标。",
+      "hint": "检查网关是否开启信标广播、覆盖是否正常。"
+    },
+    {
+      "code": "+EVT:BEACON_LOST",
+      "severity": "warn",
+      "type": "event",
+      "meaning": "超过 120 分钟未收到信标，Class B 已回退为 Class A 并重新搜信标。",
+      "hint": "无需手动处理，恢复覆盖后自动重新锁定。"
+    },
+    {
+      "code": "NVM DATA STORED",
+      "severity": "ok",
+      "type": "event",
+      "meaning": "LoRaWAN 上下文已成功写入 Flash（AT+CS）。",
+      "hint": ""
+    },
+    {
+      "code": "NVM DATA RESTORED",
+      "severity": "ok",
+      "type": "event",
+      "meaning": "LoRaWAN 上下文已从 Flash 恢复。",
+      "hint": ""
+    }
+  ],
+  "serial_defaults": {
+    "baudrate": 115200,
+    "bytesize": 8,
+    "parity": "N",
+    "stopbits": 1,
+    "flowcontrol": "none",
+    "timeout": 1.0,
+    "dtr": "off",
+    "rts": "off",
+    "auto_reconnect": false
+  },
+  "protocol_defaults": {
+    "line_ending": "CRLF"
   }
 }
