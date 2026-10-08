@@ -5,6 +5,7 @@ import queue
 import re
 import threading
 import time
+from collections import deque
 from typing import Any
 
 from ..core import (commands, errorcodes, exporter, paths, presets, profiles,
@@ -18,7 +19,7 @@ from ..core import protocol as P
 from ..core.runner import Runner
 from ..core.serial_mgr import SerialManager
 
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.0.1"
 APP_NAME = "AT指令调试台"
 
 
@@ -66,9 +67,11 @@ class Api:
         self.http_url = ""
         self._win = None
         self._maximized = False
-        self._event_queue: "queue.Queue[dict]" = queue.Queue(maxsize=8000)
+        self._restore_rect = None
+        self._event_log: "deque[dict]" = deque(maxlen=4000)
+        self._event_seq = 0  # 事件/JS 共用单调递增序号，各 UI 持游标独立拉取
+        self._js_log: "deque[dict]" = deque(maxlen=1000)
 
-        self._js_queue: "queue.Queue[dict]" = queue.Queue(maxsize=4000)
         self._js_results: dict[str, dict] = {}
         self._sub = self.mgr.subscribe()
         self._pump_thread = threading.Thread(target=self._pump, daemon=True)
@@ -86,6 +89,11 @@ class Api:
         self._rx_warned = False
         self.runner.on_send = self.log_tx
 
+        try:
+            # 初始化：生成/补全 config.json（缺一补全，已有值不覆盖）
+            self.cfg.ensure_defaults()
+        except Exception:
+            pass
         try:
             profiles.seed_builtin()
         except Exception:
@@ -113,7 +121,8 @@ class Api:
 
         errorcodes.set_active(target,
                               (self.profile.get("device") or {})
-                              .get("style", "an5481"))
+                              .get("style", "an5481"),
+                              self.profile.get("error_codes"))
         self.simulator._reset_state()
         self.buttons.switch_profile(target, self.profile.get("buttons") or [])
         if persist and target:
@@ -613,11 +622,9 @@ class Api:
             if name == "minimize":
                 self._win.minimize()
             elif name == "maximize":
-                self._win.maximize()
-                self._maximized = True
+                self._do_maximize()
             elif name == "restore":
-                self._win.restore()
-                self._maximized = False
+                self._do_restore()
             else:
                 return {"ok": False, "error": f"未知窗口命令：{command}"}
             return {"ok": True}
@@ -692,13 +699,46 @@ class Api:
             return {"ok": False, "error": "浏览器模式下无法最大化"}
         try:
             if self._maximized:
-                self._win.restore()
+                self._do_restore()
             else:
-                self._win.maximize()
-            self._maximized = not self._maximized
+                self._do_maximize()
             return {"ok": True, "maximized": self._maximized}
         except Exception as exc:
             return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+
+    def _do_maximize(self) -> None:
+        """最大化到显示器的工作区（不含任务栏）。无边框窗口用系统 maximize 会
+        盖住任务栏，这里改为直接用工作区物理坐标 SetWindowPos。"""
+        if self._maximized or self._win is None:
+            return
+        rect = self.get_window_rect()
+        if rect.get("ok"):
+            self._restore_rect = rect
+        wa = winnative.work_area_physical(self._win)
+        if not wa or not winnative.set_rect_physical(
+                self._win, wa["x"], wa["y"], wa["width"], wa["height"]):
+            try:
+                self._win.maximize()
+            except Exception:
+                pass
+        self._maximized = True
+
+    def _do_restore(self) -> None:
+        if not self._maximized or self._win is None:
+            return
+        self._maximized = False
+        rr = getattr(self, "_restore_rect", None)
+        if rr and rr.get("ok"):
+            try:
+                self._win.move(int(rr["x"]), int(rr["y"]))
+                self._win.resize(int(rr["width"]), int(rr["height"]), "nw")
+                return
+            except Exception:
+                pass
+        try:
+            self._win.restore()
+        except Exception:
+            pass
 
     def reset_window_size(self) -> dict:
         default = dict(DEFAULTS.get("window") or {})
@@ -769,16 +809,12 @@ class Api:
             except Exception:
                 pass
         try:
-            self._event_queue.put_nowait(event)
-        except queue.Full:
-            try:
-                self._event_queue.get_nowait()
-            except Exception:
-                pass
-            try:
-                self._event_queue.put_nowait(event)
-            except Exception:
-                pass
+            event = dict(event)
+            self._event_seq += 1
+            event["seq"] = self._event_seq
+            self._event_log.append(event)
+        except Exception:
+            pass
 
     def log_tx(self, cmd: str) -> None:
         self._push_event({
@@ -816,7 +852,8 @@ class Api:
             "platform": paths.platform_label(),
             "python_platform": __import__("sys").platform,
             "frozen": paths.is_frozen(),
-            "data_dir": str(paths.user_dir()),
+            "instance": paths.instance_name(),
+            "data_dir": str(paths.runtime_dir()),
             "profiles_dir": str(paths.builtin_profiles_dir()),
             "config": self.cfg.to_dict(),
             "ports": SerialManager.list_ports(),
@@ -860,28 +897,38 @@ class Api:
     def get_status(self) -> dict:
         return self.mgr.status()
 
-    def poll(self) -> dict:
+    def poll(self, last_seq: int | None = None) -> dict:
+        """游标式拉取：各 UI 界面持自己的 last_seq 独立读取事件日志，
+        互不消费，多个界面（软件窗口 + 浏览器）可同步看到完整串口输出。"""
         events: list[dict] = []
-        while len(events) < 400:
+        js: list[dict] = []
+        seq = self._event_seq
+        if last_seq is not None:
             try:
-                events.append(self._event_queue.get_nowait())
-            except queue.Empty:
-                break
-        pending_js: list[dict] = []
-        while len(pending_js) < 40:
-            try:
-                pending_js.append(self._js_queue.get_nowait())
-            except queue.Empty:
-                break
+                cursor = int(last_seq)
+            except (TypeError, ValueError):
+                cursor = 0
+            for ev in self._event_log:
+                if ev.get("seq", 0) > cursor:
+                    if len(events) < 400:
+                        events.append(ev)
+                    seq = max(seq, ev.get("seq", 0))
+            for item in self._js_log:
+                if item.get("seq", 0) > cursor:
+                    if len(js) < 40:
+                        js.append(item)
+                    seq = max(seq, item.get("seq", 0))
         return {
             "events": events,
             "status": self.mgr.status(),
             "progress": self._progress,
             "running": self.runner.running,
             "busy": bool(self._busy_reason()),
-            "js": pending_js,
+            "loop_send": self.loop_send_status(),
+            "js": js,
             "ports": self._check_ports(),
             "rx_silent": self._check_rx_silence(),
+            "seq": seq,
         }
 
     def _check_rx_silence(self) -> bool:
@@ -932,7 +979,7 @@ class Api:
             self.log_sys(f"检测到新串口：{d}")
         for d in removed:
             self.log_sys(f"串口已移除：{d}")
-            if self.mgr.is_open() and self.mgr.port_name() == d:
+            if self.mgr.is_open and self.mgr.port_name == d:
                 self.log_sys("当前连接的串口已被拔出，连接可能中断")
         return {"changed": True, "list": ports,
                 "added": added, "removed": removed}
@@ -949,7 +996,9 @@ class Api:
 
 
     def _push_js(self, script: str, tag: str = "") -> None:
-        self._js_queue.put({"tag": tag, "script": script})
+        self._event_seq += 1
+        self._js_log.append({"tag": tag, "script": script,
+                             "seq": self._event_seq})
 
     def _wait_js(self, tag: str, timeout: float = 8.0):
         deadline = time.time() + timeout
@@ -1087,6 +1136,15 @@ class Api:
             return {"ok": False,
                     "error": busy + "，已拦截下发（等执行完毕或点「停止」）"}
         self._remember(cmd)
+        if timeout is None:
+            # 未显式指定超时时，套用指令库中该指令的专属超时（配网/扫描等慢指令）
+            try:
+                base = cmd.split("=")[0].split("?")[0].strip().upper()
+                entry = commands.COMMAND_MAP.get(base) or {}
+                if entry.get("timeout"):
+                    timeout = float(entry["timeout"])
+            except Exception:
+                timeout = None
         result = self.runner.send(cmd, timeout=timeout,
                                   wait_event=float(wait_event or 0),
                                   expect=expect, no_status=no_status,
@@ -1411,43 +1469,111 @@ class Api:
         except Exception as exc:
             return {"ok": False, "error": f"读取失败：{exc}"}
 
-    def _load_history(self) -> list[str]:
+    # ---- 发送历史：按天分文件 history/YYYY-MM-DD.json，自动清理过期 ----
+
+    @staticmethod
+    def _day_key(ts: float | None = None) -> str:
+        return time.strftime("%Y-%m-%d", time.localtime(ts or time.time()))
+
+    def _history_limit(self) -> int:
+        return int(self.cfg.behavior.get("history_limit", 200) or 200)
+
+    def _read_day(self, day: str) -> list[str]:
         try:
-            raw = paths.history_file().read_text(encoding="utf-8")
-            data = json.loads(raw)
+            data = json.loads(
+                (paths.history_dir() / f"{day}.json")
+                .read_text(encoding="utf-8"))
+            return [str(x) for x in data if str(x).strip()] \
+                if isinstance(data, list) else []
         except Exception:
             return []
-        if not isinstance(data, list):
-            return []
-        limit = int(self.cfg.behavior.get("history_limit", 200) or 200)
-        return [str(item) for item in data if str(item).strip()][:limit]
 
-    def _save_history(self) -> None:
+    def _write_day(self, day: str, items: list[str]) -> None:
+        limit = self._history_limit()
         try:
-            path = paths.history_file()
+            path = paths.history_dir() / f"{day}.json"
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(
-                json.dumps(self._history, ensure_ascii=False),
+                json.dumps(items[:limit], ensure_ascii=False),
                 encoding="utf-8")
         except Exception:
             pass
 
+    def _load_history(self) -> list[str]:
+        base = paths.history_dir()
+        merged: list[str] = []
+        cutoff = time.time() - 30 * 86400  # 只保留最近 30 天
+        try:
+            if base.is_dir():
+                for f in sorted(base.glob("*.json")):
+                    try:
+                        day_ts = time.mktime(
+                            time.strptime(f.stem, "%Y-%m-%d"))
+                    except Exception:
+                        continue
+                    if day_ts < cutoff:
+                        try:
+                            f.unlink()
+                        except OSError:
+                            pass
+                        continue
+                    for item in reversed(self._read_day(f.stem)):
+                        if item not in merged:
+                            merged.append(item)
+        except Exception:
+            pass
+        # 兼容迁移：旧单文件 history.json 并入当天，然后归档
+        legacy = paths.history_file()
+        if legacy.exists():
+            try:
+                data = json.loads(legacy.read_text(encoding="utf-8"))
+                if isinstance(data, list):
+                    today_items: list[str] = []
+                    for item in reversed([str(x) for x in data]):
+                        if not item.strip():
+                            continue
+                        if item not in merged:
+                            merged.insert(0, item)
+                        if item not in today_items:
+                            today_items.insert(0, item)
+                    self._write_day(self._day_key(), today_items)
+                legacy.rename(legacy.with_suffix(".json.migrated"))
+            except Exception:
+                pass
+        return merged[: self._history_limit()]
+
     def _remember(self, cmd: str) -> None:
         if not self.cfg.behavior.get("save_history", True):
             return
+        today = self._day_key()
+        day_items = self._read_day(today)
+        if cmd in day_items:
+            day_items.remove(cmd)
+        day_items.append(cmd)
+        self._write_day(today, day_items)
         if cmd in self._history:
             self._history.remove(cmd)
         self._history.insert(0, cmd)
-        limit = int(self.cfg.behavior.get("history_limit", 200))
-        del self._history[limit:]
-        self._save_history()
+        del self._history[self._history_limit():]
+
+    def _save_history(self) -> None:
+        """占位保持兼容：按天写入在 _remember 中完成。"""
 
     def get_history(self) -> list[str]:
         return list(self._history)
 
     def clear_history(self) -> dict:
         self._history = []
-        self._save_history()
+        try:
+            base = paths.history_dir()
+            if base.is_dir():
+                for f in base.glob("*.json"):
+                    try:
+                        f.unlink()
+                    except OSError:
+                        pass
+        except Exception:
+            pass
         return {"ok": True}
 
 
@@ -1713,8 +1839,28 @@ class Api:
             return {"ok": False, "error": str(exc)}
 
     def save_config(self, patch: dict) -> dict:
+        old = self.cfg.to_dict()
         self.cfg.update(patch or {})
-        return {"ok": True, "config": self.cfg.to_dict()}
+        result = {"ok": True, "config": self.cfg.to_dict()}
+        # 串口参数变化时静默重连：断开当前连接，立即用新参数重新打开，
+        # 用户无需手动断开重连（热应用 apply_params 在此场景不可靠）
+        try:
+            new_serial = result["config"].get("serial") or {}
+            old_serial = (old or {}).get("serial") or {}
+            changed = [k for k, v in new_serial.items()
+                       if old_serial.get(k) != v]
+            if changed and self.mgr.is_open:
+                # connect() 内部先静默断开，再按更新后的 cfg.serial 重连
+                r = self.mgr.connect()
+                result["serial_applied"] = {
+                    "ok": bool(r.get("ok")),
+                    "reconnected": True,
+                    "error": r.get("error"),
+                    "applied": changed,
+                }
+        except Exception as exc:
+            result["serial_applied"] = {"ok": False, "error": str(exc)}
+        return result
 
     def reset_config(self) -> dict:
         return {"ok": True, "config": self.cfg.reset()}
@@ -1738,8 +1884,8 @@ class Api:
         return {"ok": True, "path": str(path)}
 
     def open_data_folder(self) -> dict:
-        ok = exporter.open_in_explorer(paths.user_dir())
-        return {"ok": ok, "path": str(paths.user_dir())}
+        ok = exporter.open_in_explorer(paths.runtime_dir())
+        return {"ok": ok, "path": str(paths.runtime_dir())}
 
     def open_path(self, path: str) -> dict:
         from pathlib import Path
@@ -1797,7 +1943,7 @@ class Api:
             f'{len(profiles.list_profiles())} 个可用')
         add("自定义按钮", len(self.buttons.all()) >= 1,
             f"{len(self.buttons.all())} 个按钮")
-        add("数据目录", paths.user_dir().exists(), str(paths.user_dir()))
+        add("数据目录", paths.runtime_dir().exists(), str(paths.runtime_dir()))
         add("界面资源", paths.ui_dir().exists() and
             (paths.ui_dir() / "index.html").exists(), str(paths.ui_dir()))
 
