@@ -713,8 +713,45 @@ body.busy .bulk-panel textarea, body.busy .bulk-opts label { opacity: .6; }
   padding: 10px 15px; border-top: 1px solid var(--border);
   background: var(--bg-soft); }
 
+/* 危险操作按钮（删除/停止/关闭应答等）独立样式 */
+.danger-btn { border: 0; border-radius: var(--radius-sm);
+  padding: 7px 14px; font-size: 12.5px; font-weight: 620; cursor: pointer;
+  color: #fff; background: linear-gradient(135deg, var(--err), #ff7b72);
+  box-shadow: 0 6px 18px rgba(248, 81, 73, .24);
+  transition: all .22s var(--ease); position: relative; overflow: hidden; }
+.danger-btn:hover { transform: translateY(-2px);
+  box-shadow: 0 12px 26px rgba(248, 81, 73, .34); }
+.danger-btn:active { transform: translateY(0) scale(.98); }
+.danger-btn[disabled] { opacity: .5; cursor: not-allowed;
+  transform: none; box-shadow: none; }
+
+
 .toast-layer { position: fixed; right: 14px; bottom: 34px; z-index: 80;
   display: flex; flex-direction: column; gap: 9px; align-items: flex-end; }
+
+/* 循环发送进行中的常驻提示条 + 退出入口 */
+.loop-banner { position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%);
+  z-index: 90; display: flex; align-items: center; gap: 10px;
+  padding: 8px 12px 8px 14px; border-radius: 999px;
+  background: var(--panel-solid); border: 1px solid var(--border-strong);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, .28); font-size: 12.5px; }
+.loop-banner[hidden] { display: none; }
+.loop-banner .lb-dot { width: 9px; height: 9px; border-radius: 50%;
+  background: var(--err); box-shadow: 0 0 0 0 rgba(248, 81, 73, .6);
+  animation: lb-pulse 1.2s infinite; }
+@keyframes lb-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(248, 81, 73, .6); }
+  70% { box-shadow: 0 0 0 7px rgba(248, 81, 73, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(248, 81, 73, 0); } }
+.loop-banner .lb-text { color: var(--text); font-weight: 560; }
+.loop-banner .lb-stop { border: 0; border-radius: 999px; cursor: pointer;
+  padding: 5px 13px; font-size: 12px; font-weight: 620; color: #fff;
+  background: linear-gradient(135deg, var(--err), #ff7b72);
+  box-shadow: 0 4px 12px rgba(248, 81, 73, .3); transition: all .2s var(--ease); }
+.loop-banner .lb-stop:hover { transform: translateY(-1px);
+  box-shadow: 0 8px 18px rgba(248, 81, 73, .4); }
+.loop-banner .lb-stop:active { transform: translateY(0) scale(.97); }
+
 .toast { min-width: 190px; max-width: 320px; padding: 9px 13px;
   border-radius: var(--radius-sm); background: var(--panel-solid);
   border: 1px solid var(--border-strong); box-shadow: var(--shadow);
@@ -757,6 +794,7 @@ body.busy .bulk-panel textarea, body.busy .bulk-opts label { opacity: .6; }
 .small { font-size: 11.5px; }
 
 [data-anim="off"] * { animation-duration: .01ms !important;
+  animation-iteration-count: 1 !important;
   transition-duration: .01ms !important; }
 
 .resize-layer { position: fixed; inset: 0; z-index: 90; pointer-events: none; }
@@ -818,7 +856,12 @@ body[data-edit="off"] .edit-only { display: none !important; }
   background: rgba(227,179,65,.14); }
 .pin-btn svg { width: 14px; height: 14px; }
 
-.pc-tools { position: absolute; top: 8px; right: 38px; display: flex; gap: 4px;
+/* 预设卡片右上角操作区：收藏 + 导出并排，避免重叠 */
+.preset-card .pc-actions { position: absolute; top: 8px; right: 8px;
+  display: flex; gap: 4px; z-index: 2; }
+.preset-card .pc-actions .pin-btn { position: static; }
+
+.pc-tools { position: absolute; top: 8px; right: 70px; display: flex; gap: 4px;
   opacity: 0; transition: opacity .2s var(--ease); }
 .preset-card:hover .pc-tools { opacity: 1; }
 .pc-tools button, .ub-tools button, .suite-tools button, .cmd-tools button {
@@ -885,9 +928,10 @@ body[data-edit="off"] .edit-only { display: none !important; }
 }
 
 .http-chip { display: inline-flex; align-items: center; gap: 8px;
-  margin: -4px 0 10px; padding: 6px 12px; border-radius: 999px;
+  margin: 0 0 0 auto; padding: 6px 12px; border-radius: 999px;
   border: 1px solid var(--border); background: var(--bg-soft);
   font-size: 11.8px; color: var(--text-dim); cursor: pointer;
+  align-self: center; white-space: nowrap;
   transition: all .2s var(--ease); }
 .http-chip:hover { border-color: var(--accent); color: var(--text); }
 .http-chip .hc-ico { display: flex; color: var(--ok); }

@@ -14,6 +14,7 @@
     copy: 'copy', up: 'arrow-up', down: 'arrow-down', play: 'play',
     stop: 'square', export: 'upload', folder: 'folder', warning: 'triangle-alert',
     close: 'x', port: 'cable', link: 'link', history: 'history',
+    bookmarks: 'bookmark',
   };
 
   function resolve(name) {
