@@ -12,6 +12,14 @@ datas = [
 if ASSETS_DIR.exists():
     datas.append((str(ASSETS_DIR), "assets"))
 
+# 内置配置集：逐个目录打包（含 example），供冻结版首次运行"输出"到 exe 旁。
+# 只打包含 profile.json 的配置集目录，排除 profiles 根部的 config.json 等用户数据。
+PROFILES_DIR = PROJECT / "profiles"
+if PROFILES_DIR.exists():
+    for _child in sorted(PROFILES_DIR.iterdir()):
+        if _child.is_dir() and (_child / "profile.json").exists():
+            datas.append((str(_child), "profiles/" + _child.name))
+
 hiddenimports = [
     "atcdbg",
     "atcdbg.core",
