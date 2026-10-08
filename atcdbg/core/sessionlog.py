@@ -12,9 +12,7 @@ _LOCK = threading.RLock()
 _TS_RE = re.compile(r"^\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:[.,]\d+)?)\]\s?(.*)$")
 
 def logs_dir() -> Path:
-    d = paths.user_dir() / "logs"
-    d.mkdir(parents=True, exist_ok=True)
-    return d
+    return paths.log_dir()
 
 class SessionLogger:
     def __init__(self) -> None:
