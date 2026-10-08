@@ -46,10 +46,17 @@ class ButtonsStore:
 
     def _open(self, profile_id: str, load_defaults: bool = True) -> None:
         self.profile_id = profile_id
-        self._store = JsonStore(self._file(),
+        target = self._file()
+        fresh = not target.exists()
+        self._store = JsonStore(target,
                                 {"profile": profile_id, "buttons": []})
         data = self._store.data
         if not isinstance(data, dict) or not isinstance(data.get("buttons"), list):
+            self._store._data = {"profile": profile_id,
+                                 "buttons": [dict(b) for b in DEFAULT_BUTTONS]}
+            self._store.save()
+        elif fresh and load_defaults and DEFAULT_BUTTONS:
+            # 首次打开该配置集：播种内置按钮（避免常用功能页空白）
             self._store._data = {"profile": profile_id,
                                  "buttons": [dict(b) for b in DEFAULT_BUTTONS]}
             self._store.save()
@@ -62,7 +69,7 @@ class ButtonsStore:
 
     def _migrate_legacy(self, profile_id: str) -> None:
         legacy = paths.buttons_file("")
-        target_dir = paths.user_dir() / "profiles" / profile_id
+        target_dir = paths.user_dir() / profile_id
         target = target_dir / "buttons.json"
         if not legacy.exists() or legacy == target:
             return
