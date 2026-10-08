@@ -32,6 +32,50 @@ AT指令调试台补齐这些缺口：
 
 ---
 
+## 界面预览
+
+**仪表盘**——连接状态、指令 / 场景 / 套件统计、快捷操作与常用项置顶；浏览器模式下附 HTTP 服务地址。
+
+![仪表盘](screenshot/01-dashboard.png)
+
+**一键配置**——场景卡片：填表 → 预览指令序列 → 单步或一键执行，支持置顶与排序。
+
+![一键配置](screenshot/02-presets.png)
+
+选中场景后在下方预览并执行，变量在点击时填入：
+
+![场景预览](screenshot/02b-preset-detail.png)
+
+**指令库**——声明式指令手册，按分类过滤，危险指令单独标记，应用内直接增删改。
+
+![指令库](screenshot/03-commands.png)
+
+**常用功能**——把常用指令固化成按钮，分组管理、`{变量}` 占位符点击时填入。
+
+![常用功能](screenshot/04-buttons.png)
+
+**测试套件**——用例分組勾选运行，支持保存基线、复测自动比对差异、导出脚本与报告。
+
+![测试套件](screenshot/05-suites.png)
+
+**串口终端**——TX / RX 着色、时间戳、循环发送、自动应答、宏录制；截图中为连接内置虚拟设备（SIM）的真实收发。
+
+![串口终端](screenshot/06-terminal.png)
+
+**错误码库**——返回码命中后给出含义、严重级别与处置建议，应用内可维护。
+
+![错误码库](screenshot/07-errcodes.png)
+
+**运行日志**——连接事件、配置切换、任务进度与错误统一留痕，可按类别过滤、导出。
+
+![运行日志](screenshot/08-logs.png)
+
+**设置**——串口与协议、界面与行为、配置集（OEM）、数据与接口四个分区。
+
+![设置](screenshot/09-settings.png)
+
+---
+
 ## 功能
 
 | 模块          | 说明                                                                                                                                                                                                                                                                  |
@@ -125,23 +169,23 @@ Windows 可直接双击 `run.bat`；要免 Python 的单文件可执行程序见
 
 ## 数据目录
 
-| 平台    | 路径                                         |
-| ------- | -------------------------------------------- |
-| Windows | `%APPDATA%\AT指令调试台`                     |
-| macOS   | `~/Library/Application Support/AT指令调试台` |
-| Linux   | `~/.local/share/AT指令调试台`                |
+全部数据跟随程序目录（绿色便携，三平台一致），无需安装、不写注册表：
 
-在可执行文件旁放一个 `portable.txt` 即为便携模式（数据目录跟随程序）。
+| 目录 / 文件            | 内容                                                    |
+| ---------------------- | ------------------------------------------------------- |
+| `profiles/config.json` | 全部应用配置（串口、协议、界面、窗口、行为）            |
+| `profiles/<id>/profile.json` | 各配置集（指令库、场景、套件等）                  |
+| `profiles/<id>/buttons.json` | 各配置集的自定义按钮                              |
+| `profiles/<id>/errorcodes.json` | 各配置集的错误码词典                           |
+| `data/history/`        | 发送历史（按天分文件）                                  |
+| `data/exports/`        | 报告与导出包                                            |
+| `data/backups/`        | 配置换代备份                                            |
+| `data/baselines/`      | 测试基线                                                |
+| `data/logs/debugger.log` | 滚动应用日志                                          |
+
+旧版的 `%APPDATA%` 数据目录只作一次性迁移读取：首次运行会把旧数据自动搬进程序目录，不覆盖已有文件。
 
 首次启动会自动生成缺失的配置文件（`config.json` 缺项自动补全）；没有任何配置集时会自动生成一份示例配置集，保证开箱可用。
-
-| 文件 / 目录         | 内容                                                    |
-| ------------------- | ------------------------------------------------------- |
-| `config.json`       | 全部应用配置（串口、协议、界面、窗口、行为）            |
-| `profiles/<id>/`    | 用户配置集；每个配置集一份 `buttons.json`（自定义按钮） |
-| `history.json`      | 发送历史                                                |
-| `export/`           | 报告与导出包                                            |
-| `logs/debugger.log` | 滚动应用日志                                            |
 
 全部为纯 JSON / 文本，删掉即恢复默认。
 
@@ -166,32 +210,30 @@ Windows 可直接双击 `run.bat`；要免 Python 的单文件可执行程序见
 ## 项目结构
 
 ```
-at-command-debugger/
-├── main.py                  入口
-├── run.bat                  Windows 启动器
-├── build.py / atcdbg.spec   PyInstaller 打包（三平台脚本）
-├── requirements.txt
-├── profiles/                配置集目录（含示例配置集）
-└── atcdbg/
-    ├── core/                与 UI 无关的核心逻辑
-    │   ├── serial_mgr.py    串口、事件队列、DTR/RTS
-    │   ├── runner.py        指令 / 序列执行引擎
-    │   ├── protocol.py      帧解析，OK/ERROR/EVENT 判定
-    │   ├── commands.py      指令库 + 配置集加载
-    │   ├── presets.py       场景模板 + 插值
-    │   ├── suites.py        测试套件引擎
-    │   ├── buttons.py       自定义按钮持久化
-    │   ├── device_sim.py    设备模拟器
-    │   ├── profiles.py      配置集发现、合并、导入导出
-    │   ├── validators.py    声明式参数校验
-    │   ├── exporter.py      报告生成（md/csv/html/json）
-    │   ├── config.py        配置结构与自动保存
-    │   ├── paths.py         数据目录、日志
-    │   └── winnative.py     Win32 拖动 / 缩放 / 系统菜单
-    └── webui/
-       ├── app.py           窗口生命周期、HTTP 服务
-       ├── backend.py       JS↔Python 桥（invoke 统一调度）
-       └── ui/              HTML / CSS / JS 前端
+run.bat
+build.py / atcdbg.spec
+requirements.txt
+profiles/
+atcdbg/
+├── core/
+│   ├── serial_mgr.py
+│   ├── runner.py
+│   ├── protocol.py
+│   ├── commands.py
+│   ├── presets.py
+│   ├── suites.py
+│   ├── buttons.py
+│   ├── device_sim.py
+│   ├── profiles.py
+│   ├── validators.py
+│   ├── exporter.py
+│   ├── config.py
+│   ├── paths.py
+│   └── winnative.py
+└── webui/
+    ├── app.py
+    ├── backend.py
+    └── ui/
 ```
 
 常见定制：
