@@ -1,5 +1,5 @@
 <div align="center">
-<img alt="AT指令调试台" src="icon.svg" height="128">
+<img alt="AT Command Debugger" src="icon.svg" height="128">
 
 <h1>AT Command Debugger</h1>
 
@@ -10,15 +10,19 @@
 </div>
 
 A cross-platform (Windows / macOS / Linux) desktop host tool for exercising the AT command set of embedded modules — any AT-based firmware. Command sets are described by declarative JSON profiles, so switching modules never means changing code. It turns "open a serial terminal,
+  
 type commands by hand, squint at the replies" into a form-driven workflow: pick a scenario →
+  
 fill in the parameters → preview the command sequence → run it in one click → export the test report.
 
 Tech stack: **Python + PyWebView (native WebView) + vanilla HTML/CSS/JS** —
+  
 one codebase, three desktop platforms; a `--browser` mode that runs in a plain browser is also included.
 
 ## Overview
 
 Testing a module's AT firmware by hand means remembering the parameter ranges and ordering of dozens of commands…
+  
 Typing them one by one in a raw terminal is slow, error-prone, and leaves no proper record to look back on.
 
 AT Command Debugger fills those gaps:
@@ -29,6 +33,50 @@ AT Command Debugger fills those gaps:
 - a live serial terminal: colored TX/RX logs, HEX view, loop sending, auto-reply;
 - a built-in device simulator, so the full workflow runs without any hardware;
 - OEM profiles externalize the entire command set as JSON — adapting a new module means editing JSON, not Python.
+
+---
+
+## Screenshots
+
+**Dashboard** — connection status, command / preset / suite statistics, quick actions and pinned favorites; in browser mode the HTTP service address is shown.
+
+![Dashboard](screenshot/01-dashboard.png)
+
+**One-click presets** — scenario cards: fill the form → preview the command sequence → run step by step or in one go, with pinning and reordering.
+
+![One-click presets](screenshot/02-presets.png)
+
+Select a scenario to preview and run it below; variables are filled at click time:
+
+![Preset detail](screenshot/02b-preset-detail.png)
+
+**Command library** — declarative command reference, filter by category, dangerous commands flagged, editable in-app.
+
+![Command library](screenshot/03-commands.png)
+
+**Custom buttons** — turn frequent commands into buttons, group them, `{variable}` placeholders filled at click time.
+
+![Custom buttons](screenshot/04-buttons.png)
+
+**Test suites** — group and tick cases to run, save baselines, auto-diff on re-run, export scripts and reports.
+
+![Test suites](screenshot/05-suites.png)
+
+**Serial terminal** — TX/RX coloring, timestamps, loop sending, auto-reply, macro recording; the screenshot shows real traffic against the built-in virtual device (SIM).
+
+![Serial terminal](screenshot/06-terminal.png)
+
+**Error-code dictionary** — on a matching reply code, show meaning, severity and suggested fix; maintainable in-app.
+
+![Error-code dictionary](screenshot/07-errcodes.png)
+
+**Run logs** — connection events, profile switches, task progress and errors, filterable by category and exportable.
+
+![Run logs](screenshot/08-logs.png)
+
+**Settings** — four sections: serial & protocol, UI & behavior, profiles (OEM), data & interface.
+
+![Settings](screenshot/09-settings.png)
 
 ---
 
@@ -87,6 +135,7 @@ On Windows you can simply double-click `run.bat`; for a Python-free single-file 
 | `--selftest`        | Run the self-check and exit                                                                                    |
 | `--instance NAME`   | Multi-instance mode: dedicated data directory and lock, so several windows can drive different modules at once |
 
+
 ### First run
 
 1. Pick a serial port in the serial bar — or `SIM` for the built-in virtual device — set the baud rate to match your firmware, click **Connect**.
@@ -107,27 +156,37 @@ On Windows you can simply double-click `run.bat`; for a Python-free single-file 
 A bundled example profile demonstrates every feature and makes a good starting point for new profiles.
 
 Every field except `id` / `name` is optional and falls back to built-in defaults: `brand`, `subtitle`,
+  
 `icon`, `version`, `doc`, `categories`, `commands`, `error_codes`, `presets`, `quick_actions`,
+  
 `suites`, `buttons`, `device`, etc.
 
 Parameter validation is a serializable declarative spec (`{"type":"range","low":0,"high":9}`,
+  
 `{"type":"hex","size":8}`, `{"type":"choice",...}`, `{"type":"any","of":[...]}`);
+  
 preset steps are templates with filter interpolation (`{token|key:8}`, `{text|hex}`,
+  
 `{x|default:5}`); conditional steps support
+  
 `when: "!debug" | "mode==1" | "a&&b" | "a||b"`.
 
 Typical workflow: edit visually in Settings → Profiles (commands, presets, suites, error codes and home
+  
 pinning are all editable and reorderable inside the app), or take the JSON route — duplicate the built-in
+  
 *Example* profile → export → edit the JSON → import → verify →
+  
 drop the folder into the `profiles/` directory next to the executable (frozen builds read it externally; dev mode reads the project-root `profiles/`). Exported packages carry
+  
 `{"kind":"at-command-debugger-profile","format":1,...}`.
 
 ---
 
 ## Data directory
 
-| Platform | Path                                         |
-| -------- | -------------------------------------------- |
+| Platform | Path                                    |
+| -------- | --------------------------------------- |
 | Windows  | `%APPDATA%\AT指令调试台`                     |
 | macOS    | `~/Library/Application Support/AT指令调试台` |
 | Linux    | `~/.local/share/AT指令调试台`                |
@@ -151,15 +210,19 @@ Everything is plain JSON / text; delete it to return to defaults.
 ## FAQ
 
 **Connected, but nothing is received or sent.**
+  
 Almost always wiring or module state, not the software. Check, in order: the port is the real USB-serial adapter (not an ACPI placeholder); TX↔RX are crossed and grounds are common; the module is powered and not held in reset; the baud rate matches the firmware; if the module was ever put into transparent mode, exit it with `+++` (no line ending, 1 s silence before and after) before sending `AT`. When the module returns zero bytes, the failed-send toast includes this checklist.
 
 **The module resets or goes silent right after connecting.**
+  
 Some firmwares react to DTR/RTS levels at port open. Use the DTR / RTS toggles in the serial bar to flip the pin states after connecting.
 
 **The profile dropdown disappeared.**
+  
 The picker is hidden when only one profile exists; create or import one in Settings → Profiles.
 
 **Browser mode shows a connection error.**
+  
 Another instance may hold the HTTP port. Set a fixed one with `--port`, or give the instance its own data directory with `--instance`.
 
 ---
@@ -167,32 +230,30 @@ Another instance may hold the HTTP port. Set a fixed one with `--port`, or give 
 ## Project structure
 
 ```
-at-command-debugger/
-├── main.py                  Entry point
-├── run.bat                  Windows launcher
-├── build.py / atcdbg.spec   PyInstaller packaging (three platform scripts)
-├── requirements.txt
-├── profiles/                Profiles directory (includes the example profile)
-└── atcdbg/
-    ├── core/                UI-independent core logic
-    │   ├── serial_mgr.py    Serial port, event queue, DTR/RTS
-    │   ├── runner.py        Command / sequence execution engine
-    │   ├── protocol.py      Frame parsing, OK/ERROR/EVENT classification
-    │   ├── commands.py      Command library + profile loading
-    │   ├── presets.py       Scenario templates + interpolation
-    │   ├── suites.py        Test-suite engine
-    │   ├── buttons.py       Custom button persistence
-    │   ├── device_sim.py    Device simulator
-    │   ├── profiles.py      Profile discovery, merge, import/export
-    │   ├── validators.py    Declarative parameter validation
-    │   ├── exporter.py      Report generation (md/csv/html/json)
-    │   ├── config.py        Config schema and autosave
-    │   ├── paths.py         Data directories, logging
-    │   └── winnative.py     Win32 drag / resize / system menu
-    └── webui/
-       ├── app.py           Window lifecycle, HTTP service
-       ├── backend.py       JS↔Python bridge (single invoke dispatcher)
-       └── ui/              HTML / CSS / JS front end
+run.bat
+build.py / atcdbg.spec
+requirements.txt
+profiles/
+atcdbg/
+├── core/
+│   ├── serial_mgr.py
+│   ├── runner.py
+│   ├── protocol.py
+│   ├── commands.py
+│   ├── presets.py
+│   ├── suites.py
+│   ├── buttons.py
+│   ├── device_sim.py
+│   ├── profiles.py
+│   ├── validators.py
+│   ├── exporter.py
+│   ├── config.py
+│   ├── paths.py
+│   └── winnative.py
+└── webui/
+    ├── app.py
+    ├── backend.py
+    └── ui/
 ```
 
 Common customizations:
