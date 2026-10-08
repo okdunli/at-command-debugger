@@ -31,6 +31,8 @@
     profileId: '',
     dockOpen: false,
     seenSummary: new Set(),
+    pollSeq: null,
+    loopSending: false,
   };
 
 
@@ -75,7 +77,7 @@
   }
 
 
-  function toast(msg, type) {
+  function toast(msg, type, ms) {
     const layer = $('#toastLayer');
     const el = document.createElement('div');
     el.className = 'toast ' + (type || 'info');
@@ -88,7 +90,7 @@
     setTimeout(() => {
       el.classList.add('out');
       setTimeout(() => el.remove(), 300);
-    }, type === 'err' ? 4200 : 2600);
+    }, ms || (type === 'err' ? 4200 : 2600));
   }
 
   function ripple(e) {
@@ -316,7 +318,7 @@
     } else {
       events.forEach((ev) => {
         if (isSerial(ev) && logMatches(ev, tf)) term.appendChild(logLine(ev, showTs));
-        if (all && isProgram(ev) && logMatches(ev, af)) all.appendChild(logLine(ev, showTs));
+        if (all && isProgram(ev) && logMatches(ev, tf)) all.appendChild(logLine(ev, showTs));
         if (dock && isSerial(ev)) dock.appendChild(logLine(ev, showTs));
       });
       while (term.children.length > (S.maxLogs || 2000)) term.removeChild(term.firstChild);
@@ -392,6 +394,11 @@
     S.config = data.config || {};
     if (!data || !data.config) {
       toast('后端数据获取失败，界面内容可能不完整', 'err');
+    }
+    if (data.instance) {
+      toast('当前为独立实例 ' + data.instance + '：数据目录独立，串口配置为空。'
+        + '关闭所有本程序窗口后重新打开，即可回到主实例（原有配置与收藏都在）。',
+        'warn', 9000);
     }
     S.buttons = data.buttons || [];
     S.profiles = data.profiles || [];
@@ -613,8 +620,15 @@
   }
 
 
-  const BAUD_PRESETS = [9600, 19200, 38400, 57600, 115200, 230400, 460800];
-  const BAUD_MIN = 110, BAUD_MAX = 4608000;
+  // 标准 UART 波特率预设（110 ~ 2000000，外加大部分 WiFi/Combo 模组用到的高速率）。
+  // 来自 Wikipedia / serialport crate / CH340 数据手册的常用档位。
+  const BAUD_PRESETS = [
+    110, 300, 600, 1200, 2400, 4800, 9600, 14400, 19200, 28800, 38400,
+    56000, 57600, 74880, 115200, 128000, 153600, 230400, 256000, 460800,
+    500000, 576000, 921600, 1000000, 1152000, 1500000, 2000000,
+    3000000, 4000000, 6000000
+  ];
+  const BAUD_MIN = 110, BAUD_MAX = 6000000;
 
 
   function readBaud() {
@@ -644,7 +658,8 @@
         '（未检测到）</option>' + opts;
     }
     const dlOpts = BAUD_PRESETS.slice();
-    if (!dlOpts.includes(Number(baud))) dlOpts.unshift(Number(baud));
+    if (!dlOpts.includes(Number(baud))) dlOpts.push(Number(baud));
+    dlOpts.sort((a, b) => a - b);
     bar.innerHTML =
       '<select class="mini-select" id="selPort" style="min-width:190px">' + opts + '</select>' +
       '<input class="mini-select" id="selBaud" list="baudList" inputmode="numeric" ' +
@@ -700,6 +715,15 @@
         S.config = r.config;
         syncSerialUI();
       }
+      if (r && r.serial_applied) {
+        const sa = r.serial_applied;
+        if (sa.ok && (sa.applied || []).length) {
+          toast(sa.reconnected ? '串口参数已应用，已自动重连' :
+            '串口参数已即时生效：' + sa.applied.join(', '), 'ok');
+        } else if (!sa.ok) {
+          toast('串口参数应用失败：' + (sa.error || '未知错误'), 'err');
+        }
+      }
     };
     if ($('#selPort')) $('#selPort').addEventListener('change', syncSerial);
     if ($('#selBaud')) $('#selBaud').addEventListener('change', syncSerial);
@@ -743,7 +767,7 @@
     const tick = async () => {
       let cost = 0;
       try { const t0 = performance.now(); await poll(); cost = performance.now() - t0; }
-      catch (e) {  }
+      catch (e) { console.error('poll tick error', e); }
       const busy = S.connected || S.running ||
         (S.progress && S.progress.active && !S.progress.finished);
       const delay = busy ? 120 : 400;
@@ -754,12 +778,14 @@
   }
 
   async function poll() {
-    const d = await call('poll');
+    const d = await call('poll', S.pollSeq == null ? {} : { last_seq: S.pollSeq });
     if (!d) return;
     if (d.events && d.events.length) pushLogs(d.events);
     if (d.js && d.js.length) runJsTasks(d.js);
+    if (typeof d.seq === 'number') S.pollSeq = d.seq;
     S.connected = !!(d.status && d.status.connected);
     updateConn(d.status);
+    if (d.loop_send) syncLoopSend(d.loop_send);
 
     if (d.status && d.status.pins) {
       const p = d.status.pins;
@@ -1252,10 +1278,12 @@
       esc(p.id) + '" data-accent="' + esc(p.accent || 'blue') + '" style="animation-delay:' +
       (i * 45) + 'ms">' +
       '<div class="pc-glow"></div>' +
-      '<button class="pin-btn edit-only" data-pinref="preset:' + esc(p.id) +
+      '<div class="pc-actions">' +
+      '<button class="pin-btn" data-pinref="preset:' + esc(p.id) +
       '" title="钉到首页快速操作">' + window.icon('star') + '</button>' +
       '<button class="pin-btn" data-act="export" title="导出 AT 脚本（可回放文本）">' +
       window.icon('download') + '</button>' +
+      '</div>' +
       '<div class="pc-tools edit-only">' +
       '<button data-act="edit" title="编辑">' + window.icon('edit') + '</button>' +
       '<button data-act="del" title="删除">' + window.icon('trash') + '</button>' +
@@ -1470,6 +1498,9 @@
     } else if (f.type === 'bool') {
       inner = '<label class="switch"><input type="checkbox" data-k="' +
         esc(f.key) + '"' + (v ? ' checked' : '') + '><span>启用</span></label>';
+    } else if (f.type === 'textarea') {
+      inner = '<textarea class="inp" rows="2" data-k="' + esc(f.key) + '">' +
+        esc(v == null ? '' : v) + '</textarea>';
     } else if (f.type === 'int') {
       inner = '<input class="inp" type="number" data-k="' + esc(f.key) +
         '" value="' + esc(v == null ? '' : v) + '"' +
@@ -1868,8 +1899,11 @@
       btn.onclick = async () => {
         const mode = btn.dataset.mode;
         let value = '';
-        const first = box.querySelector('input[data-p], select[data-p]');
-        if (first) value = first.value;
+        const fields = $$('input[data-p], select[data-p]', box);
+        if (fields.length) {
+          value = fields.map((el) => String(el.value == null ? '' : el.value).trim())
+            .filter((v) => v !== '').join(',');
+        }
         if (mode === 'copy') {
           const r = await call('build_command_preview',
             { cmd_id: c.id, value: value, mode: modes.indexOf('set') >= 0 ? 'auto' : 'get' });
@@ -1886,7 +1920,7 @@
             toast('参数校验失败：' + (v.message || ''), 'err');
             const hint = box.querySelector('[data-ph]');
             if (hint) hint.textContent = v.message || '';
-            if (first) first.classList.add('err');
+            if (fields.length) fields.forEach((el) => el.classList.add('err'));
             return;
           }
         } else {
@@ -1954,7 +1988,7 @@
           '" data-group="' + esc(g) + '" data-color="' +
           esc(b.color || 'blue') + '" style="animation-delay:' + (i * 40) + 'ms">' +
           '<div class="ub-run"></div>' +
-          '<button class="pin-btn edit-only" data-pinref="button:' + esc(b.id) +
+          '<button class="pin-btn" data-pinref="button:' + esc(b.id) +
           '" title="钉到首页快速操作">' + window.icon('star') + '</button>' +
           '<div class="ub-ico">' +
           window.icon(b.icon || 'bolt') + '</div><div class="ub-name">' +
@@ -2375,7 +2409,7 @@
     const ser = c.serial || {}, pro = c.protocol || {},
       ui = c.ui || {}, beh = c.behavior || {}, wincfg = c.window || {};
     $('#formSerial').innerHTML = [
-      fieldNum('波特率', ser.baudrate, 'ser_baud', 1200, 4000000),
+      fieldNum('波特率', ser.baudrate, 'ser_baud', 110, 6000000),
       fieldSel('数据位', ser.bytesize, 'ser_bs', [5, 6, 7, 8]),
       fieldSel('校验位', ser.parity, 'ser_par', ['N', 'E', 'O', 'M', 'S']),
       fieldSel('停止位', ser.stopbits, 'ser_sb', [1, 1.5, 2]),
@@ -2536,6 +2570,11 @@
           S.config = r.config;
           S.maxLogs = (r.config.ui && r.config.ui.max_log_lines) || 2000;
           if (m[0] === 'ui') applyTheme();
+          if (r.serial_applied) {
+            const sa = r.serial_applied;
+            if (sa.ok) toast('串口参数已应用，已自动重连', 'ok');
+            else toast('串口参数应用失败：' + (sa.error || '未知错误'), 'err');
+          }
           if (el.dataset.cfg === 'ui_opacity') {
             call('set_window_opacity', { percent: value });
           }
@@ -2553,6 +2592,13 @@
           const out = el.parentElement &&
             el.parentElement.querySelector('.range-val');
           if (out) out.textContent = el.value + '%';
+          if (el.dataset.cfg === 'ui_opacity') {
+            const now = Date.now();
+            if (!el._opacityLast || now - el._opacityLast >= 40) {
+              el._opacityLast = now;
+              call('set_window_opacity', { percent: parseFloat(el.value) });
+            }
+          }
         });
       }
       el.addEventListener('change', handler);
@@ -2784,16 +2830,35 @@
       '（点击切换）';
   }
 
+  function showLoopBanner(count) {
+    const b = $('#loopBanner'); if (!b) return;
+    const txt = b.querySelector('.lb-text');
+    if (txt) txt.textContent = '循环发送进行中…' +
+      (typeof count === 'number' && count > 0 ? '已发 ' + count + ' 次' : '');
+    b.hidden = false;
+  }
+  function hideLoopBanner() { const b = $('#loopBanner'); if (b) b.hidden = true; }
+  function syncLoopSend(info) {
+    // 由 poll() 驱动：任何一端（软件/网页）启动或停止循环，所有界面同步浮条
+    if (info && info.running) { S.loopSending = true; showLoopBanner(info.count); }
+    else if (S.loopSending) { S.loopSending = false; hideLoopBanner(); }
+  }
+  async function stopLoopSendNow() {
+    try { await call('stop_loop_send'); } catch (e) {}
+    S.loopSending = false; hideLoopBanner();
+    toast('已停止循环发送', 'ok');
+  }
+
   async function loopSendDialog() {
     if (!S.connected) return toast('请先连接串口', 'warn');
     const st = await call('loop_send_status').catch(() => null);
     if (st && st.running) {
+      S.loopSending = true; showLoopBanner(st.count);
       modal('循环发送', '<p>循环发送进行中，已发送 <b>' + (st.count || 0) +
         '</b> 次。</p>', [
         { text: '关闭' },
         { text: '停止发送', cls: 'danger-btn', onClick: async () => {
-            await call('stop_loop_send');
-            toast('已停止循环发送', 'ok');
+            await stopLoopSendNow();
           } },
       ]);
       return;
@@ -2808,7 +2873,7 @@
       '<input class="inp" id="lsInt" type="number" value="1000" min="50"></div>' +
       '<div class="field"><label>重复次数（0 = 无限循环）</label>' +
       '<input class="inp" id="lsRep" type="number" value="0" min="0"></div>' +
-      '<span class="hint">发送期间将锁定其他下发入口（发送栏/批量/套件/预设）；断开串口会自动停止。</span>';
+      '<span class="hint">发送期间将锁定其他下发入口（发送栏/批量/套件/预设）；断开串口会自动停止。也可直接点界面底部「停止循环发送」按钮退出。</span>';
     modal('循环发送', body, [
       { text: '取消' },
       { text: '开始', cls: 'primary-btn', onClick: async () => {
@@ -2818,7 +2883,10 @@
             repeat: parseInt($('#lsRep').value, 10) || 0,
             mode: $('#lsMode').value,
           });
-          if (r && r.ok) toast('循环发送已启动', 'ok');
+          if (r && r.ok) {
+            S.loopSending = true; showLoopBanner(0);
+            toast('循环发送已启动', 'ok');
+          }
           else toast((r && r.error) || '启动失败', 'err');
         } },
     ]);
@@ -3730,6 +3798,7 @@
     $('#btnSignal').onclick = toggleSignal;
     $('#btnLoopSend').onclick = loopSendDialog;
     $('#btnAutoReply').onclick = autoReplyDialog;
+    const bs = $('#btnLoopStop'); if (bs) bs.onclick = stopLoopSendNow;
 
 
     $('#btnResetCounters').onclick = async () => {
@@ -3849,6 +3918,20 @@
     bindResize();
     bindWindowPresets();
     bindRipple();
+    bindGlobalKeys();
+  }
+
+  function bindGlobalKeys() {
+    // F11：用「最大化」代替浏览器原生全屏，这样全屏时任务栏依然保留
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'F11' && !!(window.pywebview && window.pywebview.api)) {
+        e.preventDefault();
+        if (document.fullscreenElement) {
+          document.exitFullscreen().catch(() => {});
+        }
+        toggleMaximize();
+      }
+    });
   }
 
 
@@ -4200,6 +4283,13 @@
   function onCmdKey(e) {
     const box = $('#acBox');
     const acOpen = box && !box.hidden && acItems.length;
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+      // Ctrl+Enter 永远直接发送，即使候选框开着也不选词
+      e.preventDefault();
+      if (acOpen) acClose();
+      sendFromBar();
+      return;
+    }
     if (e.key === 'ArrowDown') {
       if (acOpen) { e.preventDefault(); acMove(1); return; }
     } else if (e.key === 'ArrowUp') {
@@ -4210,11 +4300,6 @@
       return;
     } else if (e.key === 'Escape' && acOpen) {
       acClose();
-      return;
-    }
-    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-      e.preventDefault();
-      sendFromBar();
       return;
     }
 
