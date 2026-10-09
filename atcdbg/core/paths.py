@@ -123,7 +123,7 @@ def _migrate_from_appdata(target: Path) -> None:
             except OSError:
                 pass
 
-    rt = runtime_dir()
+    rt = _runtime_dir_location()
     try:
         target.mkdir(parents=True, exist_ok=True)
         rt.mkdir(parents=True, exist_ok=True)
@@ -157,8 +157,12 @@ def _migrate_from_appdata(target: Path) -> None:
         pass
 
 
-def user_dir() -> Path:
-    """运行时数据目录：跟随程序仓库的 profiles/（config.json 与各配置集数据都在此）。"""
+def _user_dir_location() -> Path:
+    """仅计算并创建 profiles 目录，不触发任何迁移逻辑。
+
+    用于打破 _migrate_runtime_from_profiles / _migrate_from_appdata 之间
+    互相调用 user_dir() / runtime_dir() 形成的无限递归。
+    """
     suffix = f"-{_INSTANCE}" if _INSTANCE else ""
     path = _repo_root() / f"profiles{suffix}"
     try:
@@ -167,6 +171,12 @@ def user_dir() -> Path:
         path = Path.home() / ("." + APP_NAME_ASCII.lower())
         path = path / f"profiles{suffix}"
         path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def user_dir() -> Path:
+    """运行时数据目录：跟随程序仓库的 profiles/（config.json 与各配置集数据都在此）。"""
+    path = _user_dir_location()
     _migrate_from_appdata(path)
     return path
 
@@ -221,8 +231,12 @@ def errorcodes_file(profile_id: str = "") -> Path:
         return path / "errorcodes.json"
     return user_dir() / "errorcodes.json"
 
-def runtime_dir() -> Path:
-    """运行时数据目录（发送历史/日志/导出/备份/基线等），与配置集目录 profiles/ 分离。"""
+def _runtime_dir_location() -> Path:
+    """仅计算并创建 data 目录，不触发任何迁移逻辑。
+
+    用于打破 _migrate_runtime_from_profiles / _migrate_from_appdata 之间
+    互相调用 user_dir() / runtime_dir() 形成的无限递归。
+    """
     suffix = f"-{_INSTANCE}" if _INSTANCE else ""
     path = _repo_root() / f"data{suffix}"
     try:
@@ -230,6 +244,12 @@ def runtime_dir() -> Path:
     except OSError:
         path = Path.home() / ("." + APP_NAME_ASCII.lower()) / f"data{suffix}"
         path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def runtime_dir() -> Path:
+    """运行时数据目录（发送历史/日志/导出/备份/基线等），与配置集目录 profiles/ 分离。"""
+    path = _runtime_dir_location()
     _migrate_runtime_from_profiles(path)
     _migrate_orphan_appdata_runtime(path)
     return path
@@ -237,7 +257,7 @@ def runtime_dir() -> Path:
 
 def _migrate_runtime_from_profiles(target: Path) -> None:
     """一次性把上一版误放进 profiles/ 的运行数据搬到独立 data/ 目录（不覆盖已有）。"""
-    src = user_dir()
+    src = _user_dir_location()
     for name in ("history", "logs", "exports", "backups", "baselines",
                  "history.json", "history.json.migrated", "quick_params.json"):
         s = src / name
