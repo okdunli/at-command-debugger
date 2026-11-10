@@ -421,7 +421,7 @@
     $setState('sessions', sessions().filter((x) => x.name !== name));
   }
   async function exportLogs() {
-    const r: any = await onCall('export_logs', { logs: logs().filter((l: any) => l.dir === 'tx' || l.dir === 'rx').slice(-2000) });
+    const r: any = await onCall('export_logs', { logs: termRows().map((r) => r.l) });
     if (r && r.ok) { onToast('已导出：' + r.path, 'ok'); void onCall('open_path', { path: r.path }); }
     else onToast((r && r.error) || '导出失败', 'err');
   }
