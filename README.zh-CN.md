@@ -109,13 +109,14 @@ AT指令调试台补齐这些缺口：
 
 ```bash
 cd at-command-debugger
-pip install -r requirements.txt
+npm install                  # 安装内置 rosezm 编译器（file:vendor/rosezm）与工具链
+npm run build                # 前端编译到 dist/
 python main.py               # 桌面应用
 python main.py --browser --open   # 浏览器模式
 python main.py --selftest    # 自检（含模拟器链路）
 ```
 
-Windows 可直接双击 `run.bat`；要免 Python 的单文件可执行程序见下文「打包」。
+前端热更新开发：一个终端跑 `python main.py --browser`，另一个跑 `npm run dev`；`npm run check` 类型检查 .rose 源码。免 Python 的单文件可执行程序见下文「打包」。
 
 ### 命令行参数
 
@@ -210,9 +211,12 @@ Windows 可直接双击 `run.bat`；要免 Python 的单文件可执行程序见
 ## 项目结构
 
 ```
-run.bat
+package.json / package-lock.json
 build.py / atcdbg.spec
-requirements.txt
+src/                        rosezm 前端源码（.rose 页面 + 组件）
+public/                     静态资源（同步进 dist/：图标、字体、css）
+vendor/                     内置 rosezm 编译器 + 运行时（file:vendor/rosezm）
+scripts/                    资源同步 + smoke 门禁
 profiles/
 atcdbg/
 ├── core/
@@ -232,7 +236,7 @@ atcdbg/
 │   └── winnative.py
 └── webui/
     ├── app.py
-    ├── backend.py
+    └── backend.py
     └── ui/
 ```
 
@@ -240,7 +244,7 @@ atcdbg/
 
 - **适配新模组**：复制并修改 profile JSON——指令、场景、套件、按钮、模拟器应答表全是数据，不用写 Python。
 - **加一个后端接口**：在 `webui/backend.py` 加公共方法，前端经 `invoke` 统一调度即可调用。
-- **改前端**：`webui/ui/`，改完重启生效（不热重载）。
+- **改前端**：编辑 `src/` 下的 `.rose` 源码；`npm run dev` 对着运行中的 `--browser` 后端热更新，`npm run check` 类型检查。
 - **验证环境**：`python main.py --selftest` 不开窗即可检验指令库、套件、模拟器链路与路径。
 
 ## 打包
@@ -251,12 +255,23 @@ bash build_mac.sh     # macOS
 bash build_linux.sh   # Linux（需 WebKitGTK，见脚本注释）
 ```
 
+脚本会先安装 node 依赖（npm install）、编译前端（npm run build），再用
+PyInstaller 打包 Python 后端。手动等价命令：
+
+```bash
+npm install
+npm run build
+python build.py
+```
+
 产物是**单文件可执行程序**：`dist/AT指令调试台.exe`（macOS / Linux 为 `dist/AT指令调试台`），可直接移动、分发，无需 Python 环境。注意：
 
 - PyInstaller 只能打包当前系统，不能交叉编译——在哪个系统上跑脚本就出哪个系统的产物
 - 单文件版首次启动需解压到临时目录，稍慢属正常
 - **配置集为外置目录**：exe 不打包任何配置集，构建后自动复制一份 `profiles/` 到 `dist/`，应用从同级 `profiles/` 文件夹读取；若没有任何配置集，首次启动会自动生成一份示例配置集；增删配置集改文件夹即可，无需重新打包
 - 图标直接使用 `assets/` 文件夹（`icon.png` / `icon_256.png` / `icon.ico`），打包时原样内置；想换图标直接替换该文件夹里的同名文件即可，无需任何生成步骤
+
+GitHub Actions 在每次 push 时运行 CI（`.github/workflows/ci.yml`：安装依赖、类型检查、前端构建、后端自检）；推送 `v*` 标签会跑同样的检查，用 PyInstaller 打包三平台产物并发布 pre-release，发布说明由上个 tag 以来的提交自动生成（`.github/workflows/release.yml`）。
 
 ## License
 

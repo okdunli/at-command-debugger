@@ -113,13 +113,14 @@ Select a scenario to preview and run it below; variables are filled at click tim
 
 ```bash
 cd at-command-debugger
-pip install -r requirements.txt
+npm install                  # installs the vendored rosezm compiler (file:vendor/rosezm) + tooling
+npm run build                # compile the front-end into dist/
 python main.py               # desktop app
 python main.py --browser --open   # browser mode
 python main.py --selftest    # self-check (includes the simulator link)
 ```
 
-On Windows you can simply double-click `run.bat`; for a Python-free single-file executable see "Packaging" below.
+For front-end development with hot reload: keep `python main.py --browser` running in one terminal and `npm run dev` in another; type-check the .rose sources with `npm run check`. For a Python-free single-file executable see "Packaging" below.
 
 ### Command-line options
 
@@ -230,9 +231,12 @@ Another instance may hold the HTTP port. Set a fixed one with `--port`, or give 
 ## Project structure
 
 ```
-run.bat
+package.json / package-lock.json
 build.py / atcdbg.spec
-requirements.txt
+src/                        rosezm front-end sources (.rose pages + components)
+public/                     static assets synced into dist/ (icons, fonts, css)
+vendor/                     vendored rosezm compiler + runtime (file:vendor/rosezm)
+scripts/                    build-assets sync + smoke gates
 profiles/
 atcdbg/
 ├── core/
@@ -252,15 +256,14 @@ atcdbg/
 │   └── winnative.py
 └── webui/
     ├── app.py
-    ├── backend.py
-    └── ui/
+    └── backend.py
 ```
 
 Common customizations:
 
 - **Support another module**: duplicate and edit a profile JSON — commands, presets, suites, buttons and the simulator's reply table are all data. No Python required.
 - **Add a backend call**: add a public method to `webui/backend.py`; the front end reaches it through the single `invoke` dispatcher.
-- **Modify the front end**: `webui/ui/`; relaunch after editing (no hot reload).
+- **Modify the front end**: edit the `.rose` sources under `src/`; `npm run dev` gives hot reload against a running `--browser` backend, `npm run check` type-checks.
 - **Verify an environment**: `python main.py --selftest` exercises the command library, suites, simulator link and paths without opening a window.
 
 ## Packaging
@@ -271,6 +274,16 @@ bash build_mac.sh     # macOS
 bash build_linux.sh   # Linux (requires WebKitGTK, see script notes)
 ```
 
+Each script installs the node dependencies (npm install), compiles the
+front-end (npm run build) and then packs the Python back-end with
+PyInstaller. Manual equivalent:
+
+```bash
+npm install
+npm run build
+python build.py
+```
+
 The result is a **single-file executable**: `dist/AT指令调试台.exe` (macOS / Linux: `dist/AT指令调试台`), freely movable and distributable — no Python required. Notes:
 
 - PyInstaller builds for the OS it runs on only; cross-compilation is not possible
@@ -278,7 +291,7 @@ The result is a **single-file executable**: `dist/AT指令调试台.exe` (macOS 
 - **Profiles are external**: no profiles are packed into the executable — after building, a copy of `profiles/` is placed in `dist/`, and the app reads profiles from that sibling folder; if no profile exists, an example profile is generated automatically on first launch; add or remove profiles by editing the folder, no rebuild needed
 - Icons are used as-is from the `assets/` folder (`icon.png` / `icon_256.png` / `icon.ico`) and bundled verbatim; to change the icon, just replace the files in that folder — no generation step involved
 
-A GitHub Actions workflow (`.github/workflows/build.yml`) builds all three platforms and uploads the artifacts — trigger it manually from the Actions tab or by pushing a `v*` tag.
+GitHub Actions runs CI on every push (`.github/workflows/ci.yml`: install, type-check, front-end build, backend selftest). Pushing a `v*` tag runs the same checks, builds all three platforms with PyInstaller and publishes a pre-release whose notes are generated from the commits since the previous tag (`.github/workflows/release.yml`).
 
 ## License
 
