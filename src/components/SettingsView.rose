@@ -678,16 +678,16 @@
           <div class="form-grid" id="formSerial">
             <div class="field"><label>波特率</label>
               <input class="inp" type="number" data-cfg="ser_baud" min="110" max="6000000"
-                on:change={onSerBaud} bind:value={serBaud}></div>
+                on:change={onSerBaud} value={serBaud()}></div>
             <div class="field"><label>数据位</label>
-              <select class="sel" data-cfg="ser_bs" on:change={onSerBs} bind:value={serBs}>
+              <select class="sel" data-cfg="ser_bs" on:change={onSerBs} value={serBs()}>
                 <option value="5">5</option>
                 <option value="6">6</option>
                 <option value="7">7</option>
                 <option value="8">8</option>
               </select></div>
             <div class="field"><label>校验位</label>
-              <select class="sel" data-cfg="ser_par" on:change={onSerPar} bind:value={serPar}>
+              <select class="sel" data-cfg="ser_par" on:change={onSerPar} value={serPar()}>
                 <option value="N">N</option>
                 <option value="E">E</option>
                 <option value="O">O</option>
@@ -695,43 +695,43 @@
                 <option value="S">S</option>
               </select></div>
             <div class="field"><label>停止位</label>
-              <select class="sel" data-cfg="ser_sb" on:change={onSerSb} bind:value={serSb}>
+              <select class="sel" data-cfg="ser_sb" on:change={onSerSb} value={serSb()}>
                 <option value="1">1</option>
                 <option value="1.5">1.5</option>
                 <option value="2">2</option>
               </select></div>
             <div class="field"><label>流控</label>
-              <select class="sel" data-cfg="ser_fc" on:change={onSerFc} bind:value={serFc}>
+              <select class="sel" data-cfg="ser_fc" on:change={onSerFc} value={serFc()}>
                 <option value="none">无</option>
                 <option value="rtscts">RTS/CTS</option>
                 <option value="xonxoff">XON/XOFF</option>
               </select></div>
             <div class="field"><label>读超时（秒）</label>
               <input class="inp" type="number" data-cfg="ser_to" min="0.1" max="30" step="any"
-                on:change={onSerTo} bind:value={serTo}></div>
+                on:change={onSerTo} value={serTo()}></div>
             <div class="field"><label>断线自动重连</label>
               <label class="switch"><input type="checkbox" data-cfg="ser_auto"
-                on:change={onSerAuto} bind:checked={serAuto}><span>启用</span></label></div>
+                on:change={onSerAuto} checked={serAuto()}><span>启用</span></label></div>
           </div>
         </div>
         <div class="panel">
           <div class="panel-head"><h3 data-i18n="set.protocol">协议参数</h3></div>
           <div class="form-grid" id="formProtocol">
             <div class="field"><label>行结束符</label>
-              <select class="sel" data-cfg="pro_le" on:change={onProLe} bind:value={proLe}>
+              <select class="sel" data-cfg="pro_le" on:change={onProLe} value={proLe()}>
                 <option value="CRLF">CRLF</option>
                 <option value="CR">CR</option>
                 <option value="LF">LF</option>
               </select></div>
             <div class="field"><label>指令间隔（秒）</label>
               <input class="inp" type="number" data-cfg="pro_delay" min="0" max="10" step="any"
-                on:change={onProDelay} bind:value={proDelay}></div>
+                on:change={onProDelay} value={proDelay()}></div>
             <div class="field"><label>响应超时（秒）</label>
               <input class="inp" type="number" data-cfg="pro_to" min="0.5" max="60" step="any"
-                on:change={onProTo} bind:value={proTo}></div>
+                on:change={onProTo} value={proTo()}></div>
             <div class="field"><label>忽略模组回显</label>
               <label class="switch"><input type="checkbox" data-cfg="pro_echo"
-                on:change={onProEcho} bind:checked={proEcho}><span>启用</span></label></div>
+                on:change={onProEcho} checked={proEcho()}><span>启用</span></label></div>
           </div>
         </div>
       </div>
@@ -744,13 +744,13 @@
           <div class="panel-head"><h3 data-i18n="set.ui">界面</h3></div>
           <div class="form-grid" id="formUI">
             <div class="field"><label>主题</label>
-              <select class="sel" data-cfg="ui_theme" on:change={onUiTheme} bind:value={uiTheme}>
+              <select class="sel" data-cfg="ui_theme" on:change={onUiTheme} value={uiTheme()}>
                 <option value="dark">深色</option>
                 <option value="light">浅色</option>
                 <option value="auto">跟随系统</option>
               </select></div>
             <div class="field"><label>强调色</label>
-              <select class="sel" data-cfg="ui_accent" on:change={onUiAccent} bind:value={uiAccent}>
+              <select class="sel" data-cfg="ui_accent" on:change={onUiAccent} value={uiAccent()}>
                 <option value="blue">蓝</option>
                 <option value="violet">紫</option>
                 <option value="teal">青</option>
@@ -759,25 +759,25 @@
             <div class="field"><label>自定义强调色（hex，留空用预设）</label>
               <div class="accent-custom">
                 <input type="color" id="uiAccentPick" title="取色器"
-                  on:input={onAccentPick} bind:value={accentPick}>
+                  on:input={onAccentPick} value={accentPick()}>
                 <input class="inp" type="text" data-cfg="ui_accent_custom"
                   placeholder="如 #58A6FF" maxlength="7" spellcheck="false"
-                  on:change={onAccentCustom} bind:value={accentCustom}>
+                  on:change={onAccentCustom} value={accentCustom()}>
               </div></div>
             <div class="field"><label>窗口透明度</label>
               <div class="range-row">
                 <input type="range" data-cfg="ui_opacity" min="40" max="100" step="1"
-                  on:input={onOpacInput} on:change={onOpacChange} bind:value={uiOpacity}>
+                  on:input={onOpacInput} on:change={onOpacChange} value={uiOpacity()}>
                 <span class="range-val">{uiOpacity()}%</span>
               </div></div>
             <div class="field"><label>窗口置顶</label>
               <label class="switch"><input type="checkbox" data-cfg="win_top"
-                on:change={onWinTop} bind:checked={winTop}><span>启用</span></label></div>
+                on:change={onWinTop} checked={winTop()}><span>启用</span></label></div>
             <div class="field"><label>字号（px）</label>
               <input class="inp" type="number" data-cfg="ui_fs" min="12" max="20"
-                on:change={onUiFs} bind:value={uiFs}></div>
+                on:change={onUiFs} value={uiFs()}></div>
             <div class="field"><label>界面缩放</label>
-              <select class="sel" data-cfg="ui_scale" on:change={onUiScale} bind:value={uiScale}>
+              <select class="sel" data-cfg="ui_scale" on:change={onUiScale} value={uiScale()}>
                 <option value="0.85">85% 紧凑</option>
                 <option value="0.9">90%</option>
                 <option value="0.95">95%</option>
@@ -788,13 +788,13 @@
               </select></div>
             <div class="field"><label>界面动画</label>
               <label class="switch"><input type="checkbox" data-cfg="ui_anim"
-                on:change={onUiAnim} bind:checked={uiAnim}><span>启用</span></label></div>
+                on:change={onUiAnim} checked={uiAnim()}><span>启用</span></label></div>
             <div class="field"><label>日志自动滚动</label>
               <label class="switch"><input type="checkbox" data-cfg="ui_scroll"
-                on:change={onUiScroll} bind:checked={uiScroll}><span>启用</span></label></div>
+                on:change={onUiScroll} checked={uiScroll()}><span>启用</span></label></div>
             <div class="field"><label>显示时间戳</label>
               <label class="switch"><input type="checkbox" data-cfg="ui_ts"
-                on:change={onUiTs} bind:checked={uiTs}><span>启用</span></label></div>
+                on:change={onUiTs} checked={uiTs()}><span>启用</span></label></div>
           </div>
         </div>
         <div class="panel">
@@ -802,22 +802,22 @@
           <div class="form-grid" id="formBehavior">
             <div class="field"><label>记住发送历史</label>
               <label class="switch"><input type="checkbox" data-cfg="beh_hist"
-                on:change={onBehHist} bind:checked={behHist}><span>启用</span></label></div>
+                on:change={onBehHist} checked={behHist()}><span>启用</span></label></div>
             <div class="field"><label>历史条数上限</label>
               <input class="inp" type="number" data-cfg="beh_histmax" min="10" max="1000"
-                on:change={onBehHistmax} bind:value={behHistmax}></div>
+                on:change={onBehHistmax} value={behHistmax()}></div>
             <div class="field"><label>启用内置 HTTP 服务（浏览器模式）</label>
               <label class="switch"><input type="checkbox" data-cfg="beh_http"
-                on:change={onBehHttp} bind:checked={behHttp}><span>启用</span></label></div>
+                on:change={onBehHttp} checked={behHttp()}><span>启用</span></label></div>
             <div class="field"><label>HTTP 端口（0=自动）</label>
               <input class="inp" type="number" data-cfg="beh_port" min="0" max="65535"
-                on:change={onBehPort} bind:value={behPort}></div>
+                on:change={onBehPort} value={behPort()}></div>
             <div class="field"><label>执行前二次确认</label>
               <label class="switch"><input type="checkbox" data-cfg="beh_confirm"
-                on:change={onBehConfirm} bind:checked={behConfirm}><span>启用</span></label></div>
+                on:change={onBehConfirm} checked={behConfirm()}><span>启用</span></label></div>
             <div class="field"><label>启动时自动连接上次串口</label>
               <label class="switch"><input type="checkbox" data-cfg="beh_autoconn"
-                on:change={onBehAutoconn} bind:checked={behAutoconn}><span>启用</span></label></div>
+                on:change={onBehAutoconn} checked={behAutoconn()}><span>启用</span></label></div>
           </div>
         </div>
       </div>
@@ -837,7 +837,7 @@
         <div class="form-grid">
           <div class="field">
             <label>当前配置集</label>
-            <select class="sel" id="setSelProfile" on:change={onProfileSelChange} bind:value={profileSel}>
+            <select class="sel" id="setSelProfile" on:change={onProfileSelChange} value={profileSel()}>
               {#if !profiles().length}
               <option value="">（无可用配置集）</option>
               {/if}
@@ -850,7 +850,7 @@
           <div class="field" style="grid-column:1/-1">
             <label>允许编辑配置集</label>
             <label class="switch"><input type="checkbox" id="chkEditMode"
-              on:change={onEditModeChange} bind:checked={editMode}>
+              on:change={onEditModeChange} checked={editMode()}>
               <span>开启后可新增 / 修改 / 删除指令、场景与套件</span></label>
             <span class="hint">关闭后，全站的「+ 新建 / 编辑 / 删除」按钮都会隐藏</span>
           </div>
@@ -873,16 +873,16 @@
         </p>
         <div class="form-grid">
           <div class="field"><label>版本号</label>
-            <input class="inp" id="metaVersion" placeholder="例如 1.0.0" bind:value={metaVersion}></div>
+            <input class="inp" id="metaVersion" placeholder="例如 1.0.0" value={metaVersion()}></div>
           <div class="field"><label>作者 / 厂商</label>
-            <input class="inp" id="metaAuthor" placeholder="例如 Acme IoT" bind:value={metaAuthor}></div>
+            <input class="inp" id="metaAuthor" placeholder="例如 Acme IoT" value={metaAuthor()}></div>
           <div class="field"><label>发布时间</label>
-            <input class="inp" id="metaDate" placeholder="例如 2026-03-01" bind:value={metaDate}></div>
+            <input class="inp" id="metaDate" placeholder="例如 2026-03-01" value={metaDate()}></div>
           <div class="field"><label>官方网址</label>
-            <input class="inp" id="metaWebsite" placeholder="https://..." bind:value={metaWebsite}></div>
+            <input class="inp" id="metaWebsite" placeholder="https://..." value={metaWebsite()}></div>
           <div class="field field-wide"><label>介绍</label>
             <textarea class="inp" id="metaIntro" rows="3"
-              placeholder="一句话描述本配置集适配的模组与用途" bind:value={metaIntro}></textarea></div>
+              placeholder="一句话描述本配置集适配的模组与用途" value={metaIntro()}></textarea></div>
         </div>
         <div class="row-actions" style="margin-top:8px">
           <button class="primary-btn" id="btnSaveMeta" on:click={saveMeta}>保存元信息</button>
@@ -941,17 +941,17 @@
           <div class="modal-body">
             <div class="form-grid">
               <div class="field"><label>标识（英文，用于目录名）</label>
-                <input class="inp" id="npId" placeholder="例如 acme900" bind:value={npId}>
+                <input class="inp" id="npId" placeholder="例如 acme900" value={npId()}>
                 <span class="hint">只能小写字母/数字/-/_，须以字母数字开头</span></div>
               <div class="field"><label>显示名称</label>
-                <input class="inp" id="npName" placeholder="例如 ACME-900 模组" bind:value={npName}></div>
+                <input class="inp" id="npName" placeholder="例如 ACME-900 模组" value={npName()}></div>
               <div class="field"><label>品牌名（标题栏显示）</label>
-                <input class="inp" id="npBrand" placeholder="留空则同显示名称" bind:value={npBrand}></div>
+                <input class="inp" id="npBrand" placeholder="留空则同显示名称" value={npBrand()}></div>
               <div class="field"><label>副标题</label>
-                <input class="inp" id="npSub" placeholder="例如 ACME-900 · 私有 AT 指令集" bind:value={npSub}></div>
+                <input class="inp" id="npSub" placeholder="例如 ACME-900 · 私有 AT 指令集" value={npSub()}></div>
             </div>
             <div class="field" style="margin-top:10px"><label>起点</label>
-              <select class="sel" id="npBase" bind:value={npBase}>
+              <select class="sel" id="npBase" value={npBase()}>
                 <option value="">空白配置（从零开始）</option>
                 {#each profiles() as p}
                 <option value={p.id}>复制自：{p.name || p.id}</option>
@@ -976,9 +976,9 @@
           <div class="modal-body">
             <div class="form-grid">
               <div class="field"><label>新标识</label>
-                <input class="inp" id="dpId" bind:value={dpId}></div>
+                <input class="inp" id="dpId" value={dpId()}></div>
               <div class="field"><label>新名称</label>
-                <input class="inp" id="dpName" bind:value={dpName}></div>
+                <input class="inp" id="dpName" value={dpName()}></div>
             </div>
             <p class="small" style="color:var(--text-dim);margin-top:10px">
               会完整复制指令库、场景、套件与默认按钮，随后可直接编辑。</p>
@@ -999,10 +999,10 @@
             <button class="icon-btn" on:click={closeDlg}>✕</button></div>
           <div class="modal-body">
             <div class="field"><label>粘贴配置集 JSON 包</label>
-              <textarea class="inp" id="ipJson" rows="9" placeholder={IMP_JSON_PH} bind:value={ipJson}></textarea>
+              <textarea class="inp" id="ipJson" rows="9" placeholder={IMP_JSON_PH} value={ipJson()}></textarea>
               <span class="hint">也可只粘贴 profile 对象本身；可与「导出当前」得到的内容互通</span></div>
             <div class="field" style="margin-top:8px"><label>覆盖标识（可选）</label>
-              <input class="inp" id="ipId" placeholder="留空=沿用包内 id，冲突时自动加序号" bind:value={ipId}>
+              <input class="inp" id="ipId" placeholder="留空=沿用包内 id，冲突时自动加序号" value={ipId()}>
               <span class="hint">想让导入的配置用指定目录名时填写</span></div>
           </div>
           <div class="modal-foot">

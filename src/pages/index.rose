@@ -934,7 +934,7 @@
       {#if showProfilePick()}
         <div class="profile-picker" id="profilePicker">
           <span class="pp-ico" data-icon="grid"></span>
-          <select class="mini-select" id="selProfile" title="切换配置集（OEM）" on:change={onProfileChange} bind:value={profileSel}>
+          <select class="mini-select" id="selProfile" title="切换配置集（OEM）" on:change={onProfileChange} value={profileSel()}>
             {#each profileOptions() as p}
               <option value={p.id}>{p.name || p.id}</option>
             {/each}
@@ -942,13 +942,13 @@
         </div>
       {/if}
       <div class="serial-bar" id="serialBar">
-          <select class="mini-select" id="selPort" on:change={onPortChange} bind:value={portSel}>
+          <select class="mini-select" id="selPort" on:change={onPortChange} value={portSel()}>
             <option value="">选择串口</option>
             {#each portOptions() as p}
               <option value={p.device}>{p.device}{p.description ? ' · ' + p.description : ''}</option>
             {/each}
           </select>
-          <input class="mini-input baud" id="selBaud" list="baudList" on:change={onBaudChange} bind:value={baudSel} />
+          <input class="mini-input baud" id="selBaud" list="baudList" on:change={onBaudChange} value={baudSel()} />
           <datalist id="baudList">{#each BAUDS as b}<option value={b}></option>{/each}</datalist>
           <button class="icon-btn" id="btnRefreshPorts" title="刷新串口列表" on:click={refreshPorts}><i class="lci" data-icon="refresh-cw" data-lucide="refresh-cw"></i></button>
           {#if isConnected()}
