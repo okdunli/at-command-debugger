@@ -2291,7 +2291,11 @@ def start_http_server(api: Api, host: str = "127.0.0.1",
 
     class Server(ThreadingMixIn, http.server.HTTPServer):
         daemon_threads = True
-        allow_reuse_address = True
+        # 关键：不能开 allow_reuse_address。macOS/BSD 的 SO_REUSEADDR 允许
+        # 绑定到「正在被监听」的端口（Linux 不允许），两个实例会同时“成功”
+        # 绑定 8899，连接全被其中一个收走——表现为多开时共用同一个服务。
+        # 关掉后端口冲突会正确抛 OSError，app.py 的备用端口回退才起作用。
+        allow_reuse_address = False
 
     server = Server((host, int(port or 0)), Handler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
