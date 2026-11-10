@@ -136,18 +136,35 @@ def main(argv: list[str] | None = None) -> int:
     cfg = api.cfg
     host = args.host or cfg.behavior.get("http_host", "127.0.0.1")
     port = args.port or int(cfg.behavior.get("http_port", 0) or 0)
+
+    def _try_start_http(try_port: int) -> tuple:
+        try:
+            srv, real_port = start_http_server(api, host=host, port=try_port)
+            return srv, real_port
+        except Exception as exc:  # 端口被占 / 防火墙拦截 / 权限不足等
+            log.warning("HTTP 服务（端口 %s）启动失败：%s", try_port, exc)
+            return None, try_port
+
     server = None
     if not args.no_http and cfg.behavior.get("http_server", True):
-        try:
-            server, port = start_http_server(api, host=host, port=port)
+        server, port = _try_start_http(port)
+        if server is None:
+            # 指定/配置端口被占用时，依次尝试固定备用端口，最后退回自动选端口，
+            # 避免用户一启动就看到「无法启动服务」。每个都真正传入端口。
+            candidates = [p for p in (8899, 8900, 8910, 8950) if p != port]
+            candidates.append(0)
+            for backup in candidates:
+                server, port = _try_start_http(backup)
+                if server is not None:
+                    print(f"端口被占用，已自动改用 {port}。")
+                    break
+        if server is not None:
             url = f"http://{host}:{port}/"
             api.http_url = url
             print(f"内置 HTTP 服务已启动：{url}")
             log.info("HTTP 服务 %s", url)
             if args.browser and args.open_browser:
                 threading.Timer(0.6, lambda: webbrowser.open(url)).start()
-        except Exception as exc:
-            log.warning("HTTP 服务启动失败：%s", exc)
 
     if args.browser:
         if server is None:
@@ -169,19 +186,27 @@ def main(argv: list[str] | None = None) -> int:
         print("  或改用浏览器模式：python -m atcdbg --browser --open")
         return 2
 
+    # 桌面窗口必须依赖内置 HTTP 服务加载界面——若直接以 file:// 打开，
+    # 前端所有 /api/call 请求都会落到 file:///api/call，整页变 404。
+    # 因此服务起不来时明确报错退出，绝不再静默退回 file://。
+    if server is None:
+        print("无法启动内置 HTTP 服务，桌面界面需要它来加载。")
+        print("  常见原因：端口被占用、防火墙/杀毒软件拦截、权限不足。")
+        print("  可手动指定端口重试：AT指令调试台 --port 8911")
+        print("  或改用浏览器模式：AT指令调试台 --browser --open")
+        return 6
+
     _dpi_aware()
     win_cfg = cfg.window
     width = max(1120, int(win_cfg.get("width") or 1120))
     height = max(640, int(win_cfg.get("height") or 720))
     pos = _sanitize_position(webview, win_cfg.get("x"), win_cfg.get("y"))
 
-
-
-    if server is not None:
-        host_show = "127.0.0.1" if host in ("", "0.0.0.0", "::") else host
-        desktop_url = f"http://{host_show}:{port}/index.html?desktop=1"
-    else:
-        desktop_url = None
+    host_show = "127.0.0.1" if host in ("", "0.0.0.0", "::") else host
+    # 必须用根路径 "/" 加载：rosezm 的 SPA 路由以 location.pathname 匹配，
+    # 唯一路由是 "/"；若用 "/index.html" 加载，pathname="/index.html" 匹配不到
+    # 任何路由，前端会渲染 <h1>404</h1>（HTTP 是 200，但页面内是 404）。
+    desktop_url = f"http://{host_show}:{port}/?desktop=1"
 
     window = _create_window(webview, api, width, height, pos, desktop_url)
     api._win = window
@@ -246,8 +271,8 @@ def main(argv: list[str] | None = None) -> int:
         try:
             opacity = int(cfg.ui.get("window_opacity", 100) or 100)
             if 40 <= opacity < 100:
-                from ..core import winnative
-                winnative.set_opacity(window, opacity)
+                # 走 Api（含 macOS NSWindow alpha 兜底），不要只调 winnative。
+                api.set_window_opacity(opacity)
         except Exception:
             pass
 
@@ -332,10 +357,7 @@ def _window_title(api) -> str:
         profile = getattr(api, "profile", {}) or {}
         brand = str(profile.get("brand") or "").strip()
         name = str(profile.get("name") or "").strip()
-        if brand and name and brand != name:
-            title = f"{brand} — {name}"
-        else:
-            title = brand or name or "AT指令调试台"
+        title = brand or name or "AT指令调试台"
         inst = paths.instance_name()
         if inst:
             title += f"（{inst}）"

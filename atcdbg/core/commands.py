@@ -119,7 +119,14 @@ def default_value(cmd_id: str) -> str:
     params = cmd.get("params") or []
     if not params:
         return ""
-    return str(params[0].get("default", ""))
+    # rosezm port fix (upstream bug, reproduced on the ORIGINAL app too):
+    # some profiles carry display strings ("0~3") instead of dicts here, and
+    # `params[0].get` crashed get_commands with 'str' object has no attribute
+    # 'get'. Guarded to return "" like the dict-miss path.
+    first = params[0]
+    if isinstance(first, dict):
+        return str(first.get("default", ""))
+    return ""
 
 def suggestion_for(cmd_id: str) -> str:
     cmd = COMMAND_MAP.get(cmd_id)

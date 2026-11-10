@@ -32,7 +32,8 @@ def resource_path(relative: str) -> Path:
     return app_dir() / relative
 
 def ui_dir() -> Path:
-    return resource_path("atcdbg/webui/ui")
+    # rosezm port: the frontend is built by rosezm into dist/
+    return app_dir() / "dist"
 
 def _windows_base() -> Path:
     base = os.environ.get("APPDATA")

@@ -26,6 +26,21 @@ VK_LBUTTON = 0x01
 def available() -> bool:
     return sys.platform == "win32"
 
+def _owns_hwnd(hwnd: int) -> bool:
+    """句柄必须属于当前进程——防止误操作资源管理器等外部窗口。"""
+    if not hwnd:
+        return False
+    try:
+        u32 = _u32()
+        pid = ctypes.c_ulong()
+        _bind(u32.GetWindowThreadProcessId,
+              [ctypes.c_void_p, ctypes.POINTER(ctypes.c_ulong)], ctypes.c_ulong)
+        u32.GetWindowThreadProcessId(ctypes.c_void_p(hwnd), ctypes.byref(pid))
+        return pid.value == int(__import__("os").getpid())
+    except Exception:
+        return False
+
+
 def _hwnd(window) -> int:
 
     handle = getattr(window, "_win_hwnd", None)
@@ -46,6 +61,8 @@ def _hwnd(window) -> int:
             return int(view.Handle.ToInt32())
     except Exception:
         pass
+    # 绝不回退到 GetForegroundWindow()：拿不到本窗口句柄时前台可能是
+    # 资源管理器/别的程序，SetWindowPos 会把【别人的窗口】缩放（用户实测到）。
     return 0
 
 def attach(window, retries: int = 20, delay: float = 0.15) -> bool:
@@ -120,7 +137,7 @@ def work_area_physical(window) -> dict | None:
     window that is OS-maximized fills the whole monitor including the taskbar,
     so we size it to the work area instead to keep the taskbar visible."""
     hwnd = _hwnd(window)
-    if not hwnd:
+    if not _owns_hwnd(hwnd):
         return None
     u32 = _u32()
     try:
@@ -152,7 +169,7 @@ def work_area_physical(window) -> dict | None:
 def set_rect_physical(window, x: int, y: int, w: int, h: int) -> bool:
     """Set the window bounds in physical pixels (same space as work_area_physical)."""
     hwnd = _hwnd(window)
-    if not hwnd:
+    if not _owns_hwnd(hwnd):
         return False
     u32 = _u32()
     try:
@@ -167,6 +184,97 @@ def set_rect_physical(window, x: int, y: int, w: int, h: int) -> bool:
                                     int(w), int(h), flags))
     except Exception:
         return False
+
+def dpi_scale(window) -> float:
+    """Win32 窗口的 DPI 缩放系数（物理像素 / 逻辑像素）。"""
+    if not available():
+        return 1.0
+    hwnd = _hwnd(window)
+    if not _owns_hwnd(hwnd):
+        return 1.0
+    try:
+        u32 = _u32()
+        dpi = None
+        try:
+            fn = getattr(u32, "GetDpiForWindow", None)
+            if fn is not None and hwnd:
+                _bind(fn, [ctypes.c_void_p], ctypes.c_uint)
+                dpi = int(fn(ctypes.c_void_p(hwnd)))
+        except Exception:
+            dpi = None
+        if not dpi:
+            fn = getattr(u32, "GetDpiForSystem", None)
+            if fn is not None:
+                dpi = int(fn())
+        if dpi and dpi > 0:
+            return float(dpi) / 96.0
+    except Exception:
+        pass
+    return 1.0
+
+
+def is_maximized(window) -> bool:
+    """窗口当前是否处于系统最大化（IsZoomed），比后端的 _maximized 标志可靠。"""
+    if not available():
+        return False
+    hwnd = _hwnd(window)
+    if not _owns_hwnd(hwnd):
+        return False
+    try:
+        u32 = _u32()
+        _bind(u32.IsZoomed, [ctypes.c_void_p], ctypes.c_int)
+        return bool(u32.IsZoomed(ctypes.c_void_p(hwnd)))
+    except Exception:
+        return False
+
+
+def resize_physical(window, w: int, h: int, fix_point: str = "se") -> bool:
+    """按窗口边缘方向改尺寸（物理像素），完全绕过 pywebview 的 resize。
+
+    pywebview 的 Window.resize 在 WinForms 上有时被 @_shown_call 拦下、
+    或在最大化样式未摘时 SetWindowPos 被系统忽略——表现为 Windows 拖边
+    完全无反应。这里直接读 GetWindowRect、按 fix_point 算好新位置、
+    一次 SetWindowPos 完成，与 drag_loop 用同一套可靠路径。
+    """
+    hwnd = _hwnd(window)
+    if not _owns_hwnd(hwnd):
+        return False
+    u32 = _u32()
+    try:
+        _bind(u32.GetWindowRect, [ctypes.c_void_p, ctypes.c_void_p], ctypes.c_int)
+        _bind(u32.SetWindowPos,
+              [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_int, ctypes.c_int,
+               ctypes.c_int, ctypes.c_int, ctypes.c_uint], ctypes.c_int)
+    except Exception:
+        pass
+
+    class RECT(ctypes.Structure):
+        _fields_ = [("left", ctypes.c_long), ("top", ctypes.c_long),
+                    ("right", ctypes.c_long), ("bottom", ctypes.c_long)]
+
+    try:
+        r = RECT()
+        if not u32.GetWindowRect(hwnd, ctypes.byref(r)):
+            return False
+        old_w, old_h = r.right - r.left, r.bottom - r.top
+        x, y = r.left, r.top
+        d = str(fix_point or "se").lower()
+        # fix_point 表示「拖动的是哪条边」：固定对面那条边不动。
+        if "w" in d:
+            x = r.right - w
+        if "n" in d:
+            y = r.bottom - h
+        flags = 0x0004 | 0x0010  # SWP_NOZORDER | SWP_NOACTIVATE
+        ok = bool(u32.SetWindowPos(hwnd, 0, int(x), int(y),
+                                   int(w), int(h), flags))
+        if not ok:
+            # 兜底：只改尺寸（SWP_NOMOVE），至少让尺寸变化生效
+            ok = bool(u32.SetWindowPos(hwnd, 0, 0, 0, int(w), int(h),
+                                       0x0002 | 0x0004 | 0x0010))
+        return ok
+    except Exception:
+        return False
+
 
 def drag_loop(target, timeout: float = 60.0, interval: float = 0.008) -> bool:
     """Frame-based move: track the cursor and reposition the window until the
@@ -217,7 +325,7 @@ def drag_loop(target, timeout: float = 60.0, interval: float = 0.008) -> bool:
 
 def show_system_menu(window) -> bool:
     hwnd = _hwnd(window)
-    if not hwnd:
+    if not _owns_hwnd(hwnd):
         return False
     try:
         _u32().SetForegroundWindow(hwnd)
@@ -227,7 +335,7 @@ def show_system_menu(window) -> bool:
 
 def system_command(window, command: str) -> bool:
     hwnd = _hwnd(window)
-    if not hwnd:
+    if not _owns_hwnd(hwnd):
         return False
     code = {
         "minimize": SC_MINIMIZE,
@@ -241,11 +349,27 @@ def system_command(window, command: str) -> bool:
         return False
     return _send(hwnd, WM_SYSCOMMAND, code)
 
+def set_maximized_corners(window, maximized: bool) -> bool:
+    """最大化时关掉 DWM 圆角（Windows 11 无边框窗口放大后仍会有圆角）。"""
+    if not available():
+        return False
+    hwnd = _hwnd(window)
+    if not _owns_hwnd(hwnd):
+        return False
+    try:
+        from ctypes import byref, c_int, windll
+        pref = c_int(0 if maximized else 2)  # DWMWCP_DONOTROUND / DWMWCP_ROUND
+        windll.dwmapi.DwmSetWindowAttribute(hwnd, 33, byref(pref), 4)
+        return True
+    except Exception:
+        return False
+
+
 def enable_rounded_corners(window) -> bool:
     if not available():
         return False
     hwnd = _hwnd(window)
-    if not hwnd:
+    if not _owns_hwnd(hwnd):
         return False
     try:
         from ctypes import byref, c_int, windll
@@ -271,7 +395,7 @@ def set_topmost(window, on: bool) -> bool:
     if not available():
         return False
     hwnd = _hwnd(window)
-    if not hwnd:
+    if not _owns_hwnd(hwnd):
         return False
     u32 = _u32()
     try:
@@ -291,7 +415,7 @@ def set_opacity(window, percent) -> bool:
     if not available():
         return False
     hwnd = _hwnd(window)
-    if not hwnd:
+    if not _owns_hwnd(hwnd):
         return False
     try:
         alpha_pct = max(40, min(100, int(round(float(percent)))))

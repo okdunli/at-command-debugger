@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import queue
 import re
 import threading
@@ -19,7 +20,9 @@ from ..core import protocol as P
 from ..core.runner import Runner
 from ..core.serial_mgr import SerialManager
 
-APP_VERSION = "1.0.1"
+logger = logging.getLogger("atcdbg")
+
+APP_VERSION = "1.0.2"
 APP_NAME = "AT指令调试台"
 
 
@@ -656,6 +659,37 @@ class Api:
             return {"ok": False, "error": "尺寸参数无效"}
         w = max(WIN_MIN_W, min(w, WIN_MAX))
         h = max(WIN_MIN_H, min(h, WIN_MAX))
+        # Windows：走原生 Win32 SetWindowPos（物理像素），绕开 pywebview 的
+        # Window.resize——它在 WinForms 上会因最大化样式/UI 线程被系统忽略。
+        if winnative.available():
+            try:
+                # 标志位可能与真实窗口状态不一致，用 IsZoomed 判定：
+                # 系统最大化时 SetWindowPos 会被忽略，先摘掉最大化样式。
+                if self._maximized or winnative.is_maximized(self._win):
+                    winnative.system_command(self._win, "restore")
+                    winnative.set_maximized_corners(self._win, False)
+                    self._maximized = False
+                    time.sleep(0.05)
+                # 逻辑像素 → 物理像素（DPI 缩放）
+                scale = 0.0
+                try:
+                    from webview.platforms import winforms
+                    inst = winforms.BrowserView.instances.get(
+                        getattr(self._win, "uid", "master"))
+                    if inst is not None:
+                        scale = float(getattr(inst, "_scale", 0) or 0)
+                except Exception:
+                    pass
+                if scale <= 0:
+                    # 兜底：用 GetDpiForWindow / GetDpiForSystem 推 DPI 缩放。
+                    scale = winnative.dpi_scale(self._win)
+                phys_w = max(1, int(round(w * scale)))
+                phys_h = max(1, int(round(h * scale)))
+                if winnative.resize_physical(self._win, phys_w, phys_h, fix_point):
+                    return {"ok": True, "width": w, "height": h}
+                logger.warning("native SetWindowPos failed, falling back to pywebview resize")
+            except Exception as exc:
+                logger.warning("native resize path failed: %s", exc)
         try:
             self._win.resize(w, h, _fix_point(fix_point))
             return {"ok": True, "width": w, "height": h}
@@ -679,6 +713,19 @@ class Api:
                 "width": int(self._win.width),
                 "height": int(self._win.height),
             }
+        except Exception as exc:
+            return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+
+    def move_window(self, x: float, y: float) -> dict:
+        """按屏幕坐标移动窗口（macOS/Linux 的 JS 拖动用；Windows 走原生 drag_loop）。
+
+        坐标约定与 get_window_rect 一致：x 为距屏幕左缘，y 为距屏幕上缘。
+        """
+        if self._win is None:
+            return {"ok": False, "error": "浏览器模式下无法移动窗口"}
+        try:
+            self._win.move(int(round(float(x))), int(round(float(y))))
+            return {"ok": True}
         except Exception as exc:
             return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
 
@@ -706,32 +753,112 @@ class Api:
         except Exception as exc:
             return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
 
+    def _cocoa_window(self):
+        """macOS 原生 NSWindow（系统最大化 zoom_ 需要它），取不到返回 None。"""
+        try:
+            import sys
+            if sys.platform != "darwin" or self._win is None:
+                return None
+            from webview.platforms.cocoa import BrowserView
+            inst = BrowserView.instances.get(self._win.uid)
+            if inst is None:
+                return None
+            # BrowserView.window 是 NSWindow 属性（WindowHost 实例），不是方法：
+            # 之前写 inst.window() 抛 TypeError，导致 mac 的 zoom_/opacity
+            # 兜底全部静默失败、回退到 pywebview 的假最大化。
+            win = getattr(inst, 'window', None)
+            return win() if callable(win) else win
+        except Exception:
+            return None
+
     def _do_maximize(self) -> None:
-        """最大化到显示器的工作区（不含任务栏）。无边框窗口用系统 maximize 会
-        盖住任务栏，这里改为直接用工作区物理坐标 SetWindowPos。"""
+        """Windows：工作区物理坐标 SetWindowPos（避免盖住任务栏）。
+        macOS：走系统 NSWindow.zoom_ —— pywebview 的 maximize() 只是
+        resize 到 NSScreen.frame 全屏尺寸，会把 Dock / 菜单栏挡住。"""
         if self._maximized or self._win is None:
             return
         rect = self.get_window_rect()
         if rect.get("ok"):
             self._restore_rect = rect
-        wa = winnative.work_area_physical(self._win)
-        if not wa or not winnative.set_rect_physical(
-                self._win, wa["x"], wa["y"], wa["width"], wa["height"]):
+        import sys
+        nswin = self._cocoa_window() if sys.platform == "darwin" else None
+        if nswin is not None:
             try:
-                self._win.maximize()
+                from PyObjCTools import AppHelper
+                AppHelper.callAfter(nswin.zoom_, None)
+                self._maximized = True
+                return
             except Exception:
                 pass
+        # Windows：走系统 SC_MAXIMIZE（真·最大化，带 WS_MAXIMIZE 样式，
+        # 系统自动去掉无边框窗口的圆角）。之前用 SetWindowPos 手动铺满工作区
+        # 只是「放大」，窗口没有最大化样式 → 圆角还在、还原按钮不切换、
+        # 拖边失效、SC_RESTORE 对它无效。
+        # pywebview 的 maximize() 在 WinForms 上就是 ShowWindow(SW_MAXIMIZE)。
+        if winnative.available():
+            try:
+                if winnative.system_command(self._win, "maximize"):
+                    winnative.set_maximized_corners(self._win, True)
+                    self._maximized = True
+                    return
+            except Exception:
+                pass
+        try:
+            self._win.maximize()
+        except Exception:
+            wa = winnative.work_area_physical(self._win)
+            if wa:
+                winnative.set_rect_physical(self._win, wa["x"], wa["y"],
+                                            wa["width"], wa["height"])
         self._maximized = True
 
     def _do_restore(self) -> None:
         if not self._maximized or self._win is None:
             return
         self._maximized = False
+        import sys
+        nswin = self._cocoa_window() if sys.platform == "darwin" else None
         rr = getattr(self, "_restore_rect", None)
+        if nswin is not None:
+            # NSWindow.zoom_ 是可逆的系统最大化：再 zoom 一次回到原 frame。
+            try:
+                from PyObjCTools import AppHelper
+                AppHelper.callAfter(nswin.zoom_, None)
+                return
+            except Exception:
+                pass
+        # Windows：窗口现在是系统最大化（WS_MAXIMIZE），SC_RESTORE 会把它
+        # 放回系统记住的原位置；随后用保存的 restore_rect 兜底校正一次，
+        # 保证无边框窗口的 x/y/w/h 精确还原（系统还原点偶尔带边框偏移）。
+        if winnative.available():
+            try:
+                winnative.system_command(self._win, "restore")
+                winnative.set_maximized_corners(self._win, False)
+                if rr and rr.get("ok"):
+                    # 用原生 SetWindowPos 精确还原（pywebview resize 同样是坑）。
+                    try:
+                        scale = 1.0
+                        try:
+                            from webview.platforms import winforms
+                            inst = winforms.BrowserView.instances.get(
+                                getattr(self._win, "uid", "master"))
+                            if inst is not None:
+                                scale = float(getattr(inst, "_scale", 1) or 1)
+                        except Exception:
+                            scale = winnative.dpi_scale(self._win)
+                        winnative.set_rect_physical(
+                            self._win,
+                            int(rr["x"] * scale), int(rr["y"] * scale),
+                            int(rr["width"] * scale), int(rr["height"] * scale))
+                    except Exception:
+                        pass
+                return
+            except Exception:
+                pass
         if rr and rr.get("ok"):
             try:
+                self._win.resize(int(rr["width"]), int(rr["height"]), _fix_point("nw"))
                 self._win.move(int(rr["x"]), int(rr["y"]))
-                self._win.resize(int(rr["width"]), int(rr["height"]), "nw")
                 return
             except Exception:
                 pass
@@ -990,6 +1117,15 @@ class Api:
             ok = winnative.set_topmost(self._win, bool(on))
         except Exception as exc:
             return {"ok": False, "error": str(exc)}
+        if not ok and self._win is not None:
+            # winnative 仅支持 Win32；非 Windows 用 pywebview 的 on_top setter
+            # （cocoa → NSStatusWindowLevel，gtk/qt 各有实现）兜底，否则
+            # 「窗口置顶」点了没效果、按钮高亮也永远不亮。
+            try:
+                self._win.on_top = bool(on)
+                ok = True
+            except Exception:
+                ok = False
         if save and ok:
             self.cfg.set("window", "topmost", bool(on))
         return {"ok": ok, "topmost": bool(on)}
@@ -1899,9 +2035,21 @@ class Api:
         try:
             from ..core import winnative
             ok = winnative.set_opacity(self._win, percent)
-            return {"ok": bool(ok), "percent": percent}
         except Exception as exc:
             return {"ok": False, "error": str(exc)}
+        if not ok and self._win is not None:
+            # winnative 仅 Win32；macOS 用 NSWindow.setAlphaValue_ 兜底，
+            # 否则「窗口透明度」设置点了没效果。
+            nswin = self._cocoa_window()
+            if nswin is not None:
+                try:
+                    from PyObjCTools import AppHelper
+                    alpha = max(40, min(100, int(round(float(percent))))) / 100.0
+                    AppHelper.callAfter(nswin.setAlphaValue_, alpha)
+                    ok = True
+                except Exception:
+                    pass
+        return {"ok": bool(ok), "percent": percent}
 
 
     def sim_set(self, joined: bool | None = None,
@@ -2050,6 +2198,8 @@ def start_http_server(api: Api, host: str = "127.0.0.1",
                       port: int = 0):
     import http.server
     from socketserver import ThreadingMixIn
+    from urllib.parse import unquote
+    from pathlib import Path
 
     ui_root = paths.ui_dir()
 
@@ -2059,6 +2209,42 @@ def start_http_server(api: Api, host: str = "127.0.0.1",
 
         def log_message(self, fmt: str, *args) -> None:
             pass
+
+        def do_GET(self) -> None:  # noqa: N802
+            # 路由兜底：rosezm SPA 以 location.pathname 匹配路由，唯一路由是 "/"。
+            # 若直接加载 /index.html 或任意深链接（/foo/bar），pathname 匹配不到，
+            # 前端会渲染 <h1>404</h1>——HTTP 却是 200。所以这里不能只「回退返回
+            # index.html」，而要 302 重定向回根路径，让 pathname 真正变成 "/"。
+            raw = self.path
+            path_only = unquote(raw.split("?", 1)[0].split("#", 1)[0])
+            query = raw.split("?", 1)[1] if "?" in raw else ""
+            rel = path_only.lstrip("/")
+            target = (Path(ui_root) / rel) if rel else None
+            has_ext = bool(rel) and "." in rel.rsplit("/", 1)[-1]
+
+            # 1) /index.html（或根目录下的 index.html 变体）→ 重定向到 "/"
+            if rel == "index.html" or (not has_ext and target is not None
+                                       and target.is_dir()
+                                       and (target / "index.html").exists()):
+                loc = "/" + (("?" + query) if query else "")
+                self.send_response(302)
+                self.send_header("Location", loc)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
+
+            # 2) 不存在的「路由式」路径（无扩展名）→ 重定向回根路径，保住 query
+            if rel and (target is None or not target.exists()) and not has_ext:
+                loc = "/" + (("?" + query) if query else "")
+                self.send_response(302)
+                self.send_header("Location", loc)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
+
+            # 3) 其余（真实静态资源；缺失的资源文件）照常由 SimpleHTTPRequestHandler
+            #    处理——资源缺失仍是 404，便于排查。
+            super().do_GET()
 
         def end_headers(self) -> None:
 
