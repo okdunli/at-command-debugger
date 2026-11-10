@@ -1,0 +1,93 @@
+<script>
+  // AboutView - 1:1 port of index.html #page-about + renderAbout() from app.js.
+  // Contract (docs/contract.md v3): `s` is the shell's live state GETTER - read
+  // `s()` everywhere; onSet/onCall/onToast/onGoto stay plain function props.
+  // Prop declarations use `export let x = null as any` so rosezm's
+  // extractExports binds the prop.
+  export let s = null as any;
+  export let onSet = null as any;
+  export let onCall = null as any;
+  export let onToast = null as any;
+  export let onGoto = null as any;
+
+  function boot(): any { return (s && s().boot) || null; }
+
+  // applyBrand: brand · subtitle (fallback subtitle from the original HTML)
+  function aboutSub(): string {
+    const b = boot() || {};
+    const brand = String(b.brand || b.app || 'AT指令调试台');
+    const sub = String(b.subtitle || '跨平台 AT 指令测试上位机');
+    return brand + ' · ' + sub;
+  }
+
+  // renderAbout info grid (+ official website link when the profile has one)
+  function infoRows(): any[] {
+    const b = boot() || {};
+    const rows: any[] = [
+      ['应用版本', 'v' + (b.version || '1.0.2'), false],
+      ['当前配置集', (b.profile_name || '-') + '（' + (b.profile_id || '-') + '）', false],
+      ['模组文档', b.profile_doc || b.profile_version || '-', false],
+      ['运行平台', b.platform || '-', false],
+      ['打包运行', b.frozen ? '单文件打包' : '源码运行', false],
+      ['数据目录', b.data_dir || '-', false],
+      ['配置集目录', b.profiles_dir || '-', false],
+      ['指令条数', (b.command_count || 0) + ' 条', false],
+      ['测试用例', (b.case_count || 0) + ' 个', false],
+    ];
+    const web = String(b.profile_website || '').trim();
+    if (web) rows.push(['官方网址', web, true]);
+    return rows;
+  }
+
+  // renderAbout feature list (7 hardcoded bullets, counts live from boot)
+  function features(): string[] {
+    const b = boot() || {};
+    const profiles = b.profiles || [];
+    const presets = b.presets || [];
+    const suites = b.suites || [];
+    const cats = b.categories || [];
+    return [
+      '配置集（OEM）：' + profiles.length + ' 个可用，切换即整体换装，' +
+        '导入配置包即可适配新模组',
+      '一键配置：' + presets.length + ' 个场景模板，填表即可批量下发完整指令流程',
+      '指令库：' + (b.command_count || 0) + ' 条指令，分 ' + cats.length +
+        ' 类，含参数校验与示例',
+      '测试套件：' + suites.length + ' 大类 ' + (b.case_count || 0) + ' 个用例，' +
+        '支持回读校验与报告导出',
+      '自定义按钮：多指令序列、分组、变量占位符，按配置集隔离持久化',
+      '虚拟设备：无需硬件即可完整自测全流程',
+      '三端兼容：Windows / macOS / Linux 同一套代码',
+    ];
+  }
+</script>
+
+    <section class="page " class:active={s && s().page==='about'} id="page-about">
+      <div class="page-head">
+        <h1 data-i18n="about.title">关于</h1>
+        <p class="page-sub" id="aboutSub">{aboutSub()}</p>
+      </div>
+      <div class="about-card">
+        <div class="about-logo">
+          <svg viewBox="0 0 48 48" width="56" height="56" aria-hidden="true">
+            <path d="M10 34 L20 14 L28 26 L38 12" fill="none" stroke="currentColor"
+                  stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="38" cy="12" r="3.6" fill="currentColor"/>
+          </svg>
+        </div>
+        <div class="about-info" id="aboutInfo">
+          {#each infoRows() as row, ri (ri)}
+          <dt>{row[0]}</dt>
+          {#if row[2]}<dd><a href={row[1]} target="_blank" rel="noopener noreferrer">{row[1]}</a></dd>{/if}
+          {#if !row[2]}<dd>{row[1]}</dd>{/if}
+          {/each}
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h3>功能一览</h3></div>
+        <ul class="feature-list" id="aboutFeatures">
+          {#each features() as f, fi (fi)}
+          <li>{f}</li>
+          {/each}
+        </ul>
+      </div>
+    </section>

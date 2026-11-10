@@ -1,0 +1,557 @@
+<script>
+  // PresetsView - 1:1 port of index.html #page-presets + the matching app.js
+  // logic (renderPresets / bindGridDnd / togglePin / delPreset / editPreset /
+  // iconPicker / selectPreset form / fieldHtml / bindField / validateHexField /
+  // previewPreset / runPreset / doRunPreset / exportPresetScript).
+  // Selection state lives in the shell (original S.preset/S.presetParams);
+  // this file owns view-local dialog/form/preview/DnD state only.
+  import Dialog from './Dialog.rose';
+  export let s = null as any;
+  export let onSet = null as any;
+  export let onCall = null as any;
+  export let onToast = null as any;
+  export let onGoto = null as any;
+
+  let preview = $state<any>(null);
+  let dlg = $state({ open: false, kind: '' });   // edit | del | danger
+  let f = $state<any>({ id: '', name: '', icon: 'rocket', accent: 'blue', desc: '', danger: false, fields: '[]', steps: '[]' });
+  let editId = $state('');
+  let delTarget = $state<{ id: string; name: string } | null>(null);
+  let iconOpen = $state(false);
+  let iconFilter = $state('');
+  let iconNames = $state<string[]>([]);
+  let hexHints = $state<Record<string, { cls: string; msg: string }>>({});
+  let order = $state<any[] | null>(null);
+  let dragFrom = $state(-1);
+
+  function presetList(): any[] {
+    if (order()) return order()!;
+    return (s && s().boot && s().boot.presets) || [];
+  }
+  function canEdit(): boolean { return !!(s && s().boot && s().boot.edit_mode); }
+  function isBusy(): boolean { return !!(s && (s().busy || s().busyExtra)); }
+  function isConnected(): boolean { return !!(s && s().status && s().status.connected); }
+  function selected(): any { return (s && s().preset) || null; }
+  function params(): any { return (s && s().presetParams) || {}; }
+  function paramVal(key: string): unknown {
+    const p = params();
+    return p[key] === undefined ? '' : p[key];
+  }
+  function setParam(key: string, v: unknown) {
+    onSet('presetParams', { ...params(), [key]: v });
+  }
+  function truthy(v: unknown): boolean { return Boolean(v); }
+  function pinnedSet(): Set<string> {
+    const home = (s && s().boot && s().boot.home) || {};
+    return new Set(((home.pinned || []) as any[]).map((p: any) => p.kind + ':' + p.id));
+  }
+  function isPinned(kind: string, id: string): boolean { return pinnedSet().has(kind + ':' + id); }
+  function runProg(): any {
+    return (s && s().progress && s().progress.kind !== 'suite') ? s().progress : null;
+  }
+  function hasRun(): boolean { const p = runProg(); return !!(p && p.started_at); }
+  function runItems(): any[] { const p = runProg(); return (p && p.items) || []; }
+  function pct(): number {
+    const p = runProg();
+    if (!p) return 0;
+    const total = p.total || 0;
+    return total ? Math.round(((p.done || 0) / total) * 100) : 0;
+  }
+  function respVals(it: any): string[] {
+    const st = String((it && it.status) || '').trim();
+    return (((it && it.lines) as string[]) || []).map((l) => String(l).trim()).filter((l) => l && l !== st);
+  }
+
+  // ---- card interactions ----
+  function onCardClick(e: Event, id: string) {
+    const t = e.target as HTMLElement;
+    if (t && t.closest && (t.closest('.pc-tools button') || t.closest('.pin-btn'))) return;
+    onSet('focus', { view: 'preset', id });
+  }
+
+  async function togglePin(kind: string, id: string) {
+    if (isPinned(kind, id)) {
+      const r: any = await onCall('unpin_item', { kind, item_id: id });
+      if (r && r.ok) { onSet('boot', { ...s().boot, home: r }); onToast('已取消收藏', 'ok'); }
+      else onToast((r && r.error) || '取消收藏失败', 'err');
+    } else {
+      const r: any = await onCall('pin_item', { kind, item_id: id });
+      if (r && r.ok) { onSet('boot', { ...s().boot, home: r }); onToast('已钉到首页快速操作', 'ok'); }
+      else onToast((r && r.error) || '收藏失败', 'err');
+    }
+  }
+
+  function scriptHeader(title: string, desc: string): string {
+    const lines = [
+      '# ==============================================',
+      '# ' + (((s && s().boot && s().boot.profile_name) || 'AT 模组')) + ' · ' + title,
+      '# 导出自 AT指令调试台 · ' + new Date().toLocaleString(),
+      desc ? '# 说明：' + desc : null,
+      '# 用法：逐行发送 AT 指令；# 开头为注释，WAIT 表示等待事件',
+      '# ==============================================',
+    ].filter(Boolean);
+    return lines.join('\r\n');
+  }
+  function buildPresetScript(p: any): string {
+    const lines = [scriptHeader('一键场景：' + p.name, p.desc || '')];
+    if (p.fields && p.fields.length) {
+      lines.push('', '# 本场景需要以下参数（替换指令中的占位符）：');
+      for (const fd of p.fields) {
+        lines.push('#   {' + fd.key + '}  ' + (fd.label || '') + (fd['default'] ? '，默认 ' + fd['default'] : ''));
+      }
+    }
+    (p.steps || []).forEach((st: any, i: number) => {
+      lines.push('', '# --- 步骤 ' + (i + 1) + ' ---');
+      if (st.note) lines.push('# 注：' + st.note);
+      if (st.expect) lines.push('# 期望：' + st.expect);
+      lines.push(st.cmd);
+      if (st.wait_event) lines.push('WAIT ' + st.wait_event);
+    });
+    return lines.join('\r\n') + '\r\n';
+  }
+  function downloadText(fname: string, text: string) {
+    const blob = new Blob(['﻿' + text], { type: 'text/plain;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = fname;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 3000);
+  }
+  function exportPresetScript(id: string) {
+    const p = presetList().find((x) => x.id === id);
+    if (!p) { onToast('找不到该场景', 'err'); return; }
+    downloadText(((s && s().boot && s().boot.profile_id) || 'at') + '-' + id + '.at.txt', buildPresetScript(p));
+    onToast('已导出 AT 脚本：' + p.name, 'ok');
+  }
+
+  // ---- DnD reorder (keyed-list preview, commit on drop) ----
+  function onDragStart(e: DragEvent, i: number) {
+    if (!canEdit()) return;
+    $setState('dragFrom', i);
+    try { if ((e as any).dataTransfer) (e as any).dataTransfer.effectAllowed = 'move'; } catch (err) { /* noop */ }
+  }
+  function onDragOver(e: DragEvent, i: number) {
+    if (!canEdit() || dragFrom() < 0 || dragFrom() === i) return;
+    e.preventDefault();
+    const el = e.currentTarget as HTMLElement;
+    const r = el.getBoundingClientRect();
+    const after = ((e.clientX || 0) - r.left) > r.width / 2;
+    const arr = presetList().slice();
+    let to = after ? i + 1 : i;
+    const from = dragFrom();
+    if (from < to) to -= 1;
+    const [item] = arr.splice(from, 1);
+    arr.splice(to, 0, item);
+    $setState('dragFrom', to);
+    $setState('order', arr);
+  }
+  function onDragEnd() {
+    $setState('dragFrom', -1);
+    // keep the previewed order (original left the DOM mutated too); commit on drop
+  }
+  async function onDrop(e: DragEvent, i: number) {
+    e.preventDefault();
+    void i;
+    if (!canEdit() || !order()) { $setState('order', null); return; }
+    const ids = order()!.map((x) => x.id);
+    const r: any = await onCall('reorder_presets', { ids });
+    if (r && r.ok) {
+      onSet('boot', { ...s().boot, presets: r.presets });
+      onToast('已保存顺序', 'ok');
+    } else {
+      onToast((r && r.error) || '保存顺序失败', 'err');
+    }
+    $setState('order', null);
+    $setState('dragFrom', -1);
+  }
+
+  // ---- preview / run ----
+  async function doPreview() {
+    const p = selected();
+    if (!p) return;
+    const r: any = await onCall('preview_preset', { preset_id: p.id, params: params() });
+    if (!r || !r.steps) { $setState('preview', null); return; }
+    $setState('preview', { steps: r.steps, count: r.count });
+  }
+  $effect(() => {
+    if (!preview()) return;
+    setTimeout(() => {
+      try {
+        const el = document.getElementById('stepsPreview');
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      } catch (e) { /* noop */ }
+    }, 0);
+  });
+
+  async function runPreset() {
+    const p = selected();
+    if (!p) return;
+    if (!isConnected()) { onToast('请先连接串口', 'warn'); return; }
+    if (p.danger) {
+      $setState('dlg', { open: true, kind: 'danger' });
+    try { document.dispatchEvent(new CustomEvent('rosezm:dialog-sync', { detail: { reopen: true, key: 'presets' } })); } catch (e) { /* noop */ }
+      return;
+    }
+    await doRunPreset();
+  }
+  async function doRunPreset() {
+    const p = selected();
+    if (!p) return;
+    if (isBusy()) { onToast('有批量任务正在执行，请先等待完成或停止', 'warn'); return; }
+    const r: any = await onCall('run_preset', { preset_id: p.id, params: params() });
+    if (r && r.ok) {
+      onToast('开始执行：' + p.name, 'ok');
+      setTimeout(() => {
+        try {
+          const el = document.getElementById('runPanel');
+          if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        } catch (e) { /* noop */ }
+      }, 0);
+    } else {
+      onToast((r && r.error) || '执行失败', 'err');
+    }
+    $setState('dlg', { open: false, kind: '' });
+    try { document.dispatchEvent(new CustomEvent('rosezm:dialog-sync')); } catch (e) { /* noop */ }
+  }
+  async function cancelRun() {
+    await onCall('cancel_run');
+    onToast('已请求停止', 'ok');
+  }
+
+  // ---- add / edit / delete dialog ----
+  function openEdit(id: string | null) {
+    const list = presetList();
+    const p = id ? list.find((x) => x.id === id) : null;
+    const data = p ? JSON.parse(JSON.stringify(p)) : {
+      id: '', name: '', desc: '', icon: 'rocket', accent: 'blue',
+      danger: false, fields: [], steps: [],
+    };
+    $setState('editId', id || '');
+    $setState('f', {
+      id: data.id || '', name: data.name || '', icon: data.icon || 'rocket',
+      accent: data.accent || 'blue', desc: data.desc || '', danger: !!data.danger,
+      fields: JSON.stringify(data.fields || [], null, 1),
+      steps: JSON.stringify(data.steps || [], null, 1),
+    });
+    $setState('hexHints', {});
+    $setState('dlg', { open: true, kind: 'edit' });
+    try { document.dispatchEvent(new CustomEvent('rosezm:dialog-sync', { detail: { reopen: true, key: 'presets' } })); } catch (e) { /* noop */ }
+  }
+  function updF(key: string, v: unknown) { $setState('f', { ...f(), [key]: v }); }
+  async function saveEdit() {
+    const cur = f();
+    const payload: any = {
+      id: (editId() || String(cur.id || '').trim()),
+      name: String(cur.name || '').trim() || '未命名',
+      icon: cur.icon, accent: cur.accent,
+      desc: String(cur.desc || '').trim(), danger: !!cur.danger,
+    };
+    try {
+      payload.fields = JSON.parse(String(cur.fields || '[]'));
+      payload.steps = JSON.parse(String(cur.steps || '[]'));
+    } catch (e: any) {
+      onToast('JSON 解析失败：' + e.message, 'err');
+      return;
+    }
+    if (!payload.id) { onToast('请填写标识', 'warn'); return; }
+    const r: any = editId()
+      ? await onCall('update_preset', { preset_id: editId(), payload })
+      : await onCall('add_preset', { payload });
+    if (!r || !r.ok) { onToast((r && r.error) || '保存失败', 'err'); return; }
+    onSet('boot', { ...s().boot, presets: r.presets || s().boot.presets });
+    onToast('已保存', 'ok');
+    $setState('dlg', { open: false, kind: '' });
+    try { document.dispatchEvent(new CustomEvent('rosezm:dialog-sync')); } catch (e) { /* noop */ }
+  }
+  function openDel(id: string) {
+    const p = presetList().find((x) => x.id === id);
+    $setState('delTarget', { id, name: p ? p.name : id });
+    $setState('dlg', { open: true, kind: 'del' });
+    try { document.dispatchEvent(new CustomEvent('rosezm:dialog-sync', { detail: { reopen: true, key: 'presets' } })); } catch (e) { /* noop */ }
+  }
+  async function confirmDel() {
+    const t = delTarget();
+    if (!t) return;
+    const r: any = await onCall('delete_preset', { preset_id: t.id });
+    if (!r || !r.ok) { onToast((r && r.error) || '删除失败', 'err'); return; }
+    onSet('boot', { ...s().boot, presets: r.presets || s().boot.presets });
+    if (s().preset && s().preset.id === t.id) onSet('preset', null);
+    onToast('已删除', 'ok');
+    $setState('dlg', { open: false, kind: '' });
+    try { document.dispatchEvent(new CustomEvent('rosezm:dialog-sync')); } catch (e) { /* noop */ }
+  }
+  function closeDlg() { $setState('dlg', { open: false, kind: '' });
+    try { document.dispatchEvent(new CustomEvent('rosezm:dialog-sync')); } catch (e) { /* noop */ } }
+
+  // ---- icon picker (stacked above the edit dialog) ----
+  function openIconPicker() {
+    const names = (globalThis as any).LUCIDE_ICONS;
+    $setState('iconNames', Array.isArray(names) ? names.slice() : []);
+    $setState('iconFilter', '');
+    $setState('iconOpen', true);
+    try { document.dispatchEvent(new CustomEvent('rosezm:dialog-sync', { detail: { reopen: true, key: 'presets' } })); } catch (e) { /* noop */ }
+  }
+  function iconList(): string[] {
+    const kw = String(iconFilter() || '').toLowerCase();
+    const all = iconNames() || [];
+    return kw ? all.filter((n) => n.indexOf(kw) >= 0) : all;
+  }
+  function pickIcon(n: string) {
+    $setState('f', { ...f(), icon: n });
+    $setState('iconOpen', false);
+    try { document.dispatchEvent(new CustomEvent('rosezm:dialog-sync')); } catch (e) { /* noop */ }
+  }
+  function onIconSearch(e: Event) {
+    $setState('iconFilter', (e.target as HTMLInputElement).value);
+  }
+  function onIconClick(e: Event) {
+    const t = e.target as HTMLElement;
+    const cell = t && t.closest ? (t.closest('.ic-cell') as HTMLElement) : null;
+    if (cell && cell.dataset.n) pickIcon(cell.dataset.n);
+  }
+  // re-run lucide on the picker grid when it opens or the filter changes
+  $effect(() => {
+    if (!iconOpen()) return;
+    void iconList();
+    setTimeout(() => {
+      try {
+        const l = (globalThis as any).lucide;
+        if (l) l.createIcons({ nameAttr: 'data-lucide', attrs: { width: '1em', height: '1em', 'stroke-width': 1.9 } });
+      } catch (e) { /* noop */ }
+    }, 30);
+  });
+
+  // ---- form fields (original fieldHtml/bindField/validateHexField) ----
+  function fieldInput(e: Event, fld: any) {
+    const el = e.target as HTMLInputElement;
+    setParam(fld.key, el.value);
+    if (fld.type === 'hex') validateHexField(el.value, fld);
+  }
+  function validateHexField(value: string, fld: any) {
+    const size = parseInt(String((fld && fld.size) || 16), 10) || 16;
+    const raw = String(value || '').replace(/[^0-9A-Fa-f]/g, '');
+    if (!raw) {
+      $setState('hexHints', { ...hexHints(), [fld.key]: { cls: 'err', msg: '不能为空' } });
+      return false;
+    }
+    if (raw.length !== size * 2) {
+      $setState('hexHints', { ...hexHints(), [fld.key]: { cls: 'err', msg: '应为 ' + size + ' 字节（' + (size * 2) + ' 个十六进制字符）' } });
+      return false;
+    }
+    $setState('hexHints', { ...hexHints(), [fld.key]: { cls: 'ok', msg: '✓ 格式正确' } });
+    return true;
+  }
+  function hexCls(fld: any): string {
+    if (fld.type !== 'hex') return '';
+    const h = hexHints()[fld.key];
+    return h ? h.cls : '';
+  }
+  function hintFor(key: string): string {
+    const h = hexHints()[key];
+    return h ? h.msg : '';
+  }
+
+  // Esc (shell) resets this view's local dialog state so a later open is a
+  // real false -> true transition; the Dialog child keeps its own latch.
+  onMount(() => {
+    const __resetDlg = () => { $setState('dlg', { open: false, id: '', title: '' }); $setState('iconOpen', false); };
+    document.addEventListener('rosezm:dialog-reset', __resetDlg);
+    onCleanup(() => document.removeEventListener('rosezm:dialog-reset', __resetDlg));
+  });
+</script>
+
+<section class="page " class:active={s && s().page==='presets'} id="page-presets">
+  <div class="page-head">
+    <h1 data-i18n="pre.title">一键配置</h1>
+    <p class="page-sub" data-i18n="pre.sub">选择场景 → 填写参数 → 一键下发整条指令流程</p>
+    <div class="head-actions">
+      <button class="primary-btn edit-only" id="btnAddPreset" on:click={() => openEdit(null)}>+ 新建场景</button>
+    </div>
+  </div>
+  <div class="preset-grid" id="presetGrid">
+    {#each presetList() as p, i (p.id)}
+    <div class="preset-card  " class:danger={p.danger} class:on={s().preset && s().preset.id === p.id}
+         data-id={p.id} data-accent={p.accent || 'blue'} style="animation-delay:{i * 45}ms"
+         draggable={canEdit() ? 'true' : 'false'}
+         on:click={(e) => onCardClick(e, p.id)}
+         on:dragstart={(e) => onDragStart(e, i)}
+         on:dragover={(e) => onDragOver(e, i)}
+         on:dragend={onDragEnd}
+         on:drop={(e) => onDrop(e, i)}>
+      <div class="pc-glow"></div>
+      <div class="pc-actions">
+        <button class="pin-btn " class:pinned={isPinned('preset', p.id)}
+                title={() => isPinned('preset', p.id) ? '取消收藏' : '钉到首页快速操作'}
+                on:click={(e) => { e.stopPropagation(); togglePin('preset', p.id); }}>
+          <i class="lci" data-lucide="star"></i>
+        </button>
+        <button class="pin-btn" title="导出 AT 脚本（可回放文本）"
+                on:click={(e) => { e.stopPropagation(); exportPresetScript(p.id); }}>
+          <i class="lci" data-lucide="download"></i>
+        </button>
+      </div>
+      <div class="pc-tools edit-only">
+        <button title="编辑" on:click={(e) => { e.stopPropagation(); openEdit(p.id); }}>
+          <i class="lci" data-lucide="edit-3"></i>
+        </button>
+        <button title="删除" on:click={(e) => { e.stopPropagation(); openDel(p.id); }}>
+          <i class="lci" data-lucide="trash-2"></i>
+        </button>
+      </div>
+      <div class="pc-ico"><i class="lci" data-lucide={p.icon || 'bolt'}></i></div>
+      <div class="pc-name">{p.name}</div>
+      <div class="pc-desc">{p.desc || ''}</div>
+    </div>
+    {/each}
+  </div>
+
+  {#if selected()}
+  <div class="panel" id="presetPanel">
+    <div class="panel-head">
+      <h3 id="presetTitle">{selected().name}</h3>
+      <div class="head-actions">
+        <button class="ghost-btn" id="btnPresetPreview" on:click={doPreview}>预览指令</button>
+        <button class="primary-btn" id="btnPresetRun" disabled={isBusy()} on:click={runPreset}>
+          <span data-i18n="pre.run">一键执行</span>
+        </button>
+      </div>
+    </div>
+    <div class="form-grid" id="presetForm">
+      {#each (selected().fields || []) as fld (fld.key)}
+      <div class="field">
+        <label>{fld.label}</label>
+        {#if fld.type === 'select'}
+        <select class="sel" on:change={(e) => setParam(fld.key, (e.target as HTMLSelectElement).value)}>
+          {#each (fld.options || []) as o}
+          <option value={o.value} selected={String(o.value) === String(paramVal(fld.key))}>{o.label}</option>
+          {/each}
+        </select>
+        {/if}
+        {#if fld.type === 'bool'}
+        <label class="switch"><input type="checkbox" checked={truthy(paramVal(fld.key))} on:change={(e) => setParam(fld.key, (e.target as HTMLInputElement).checked)}><span>启用</span></label>
+        {/if}
+        {#if fld.type === 'textarea'}
+        <textarea class="inp" rows="2" on:input={(e) => setParam(fld.key, (e.target as HTMLTextAreaElement).value)}>{paramVal(fld.key)}</textarea>
+        {/if}
+        {#if fld.type === 'int'}
+        <input class="inp" type="number" value={paramVal(fld.key)} min={fld.min} max={fld.max} on:input={(e) => setParam(fld.key, (e.target as HTMLInputElement).value)}>
+        {/if}
+        {#if fld.type !== 'select' && fld.type !== 'bool' && fld.type !== 'textarea' && fld.type !== 'int'}
+        <input class={'inp' + (hexCls(fld) ? ' ' + hexCls(fld) : '')} type="text" value={paramVal(fld.key)} on:input={(e) => fieldInput(e, fld)}>
+        {/if}
+        <span class="hint" data-hint={fld.key}>{hintFor(fld.key)}</span>
+      </div>
+      {/each}
+    </div>
+    {#if preview()}
+    <div class="steps-preview" id="stepsPreview">
+      <div class="group-title">指令序列（{preview().count} 步）</div>
+      {#each preview().steps as st, i}
+      <div class="step-item" style="animation-delay:{i * 28}ms">
+        <span class="step-no">{i + 1}</span>
+        <span class="step-cmd">{st.cmd}</span>
+        {#if st.label && st.label !== st.cmd}<span class="step-label">{st.label}</span>{/if}
+        {#if st.wait_event}<span class="step-label">等待事件 {st.wait_event}s</span>{/if}
+      </div>
+      {/each}
+    </div>
+    {/if}
+  </div>
+  {/if}
+
+  {#if hasRun()}
+  <div class="panel" id="runPanel">
+    <div class="panel-head">
+      <h3 data-i18n="pre.progress">执行进度</h3>
+      <button class="ghost-btn danger" id="btnCancelRun" on:click={cancelRun}>停止</button>
+    </div>
+    <div class="progress-wrap">
+      <div class="progress-track"><div class="progress-fill" id="runFill" style="width:{pct()}%"></div></div>
+      <div class="progress-text" id="runText">{runProg().done || 0} / {runProg().total || 0}</div>
+    </div>
+    <div class="run-list" id="runList">
+      {#each runItems() as it, i}
+      <div class="run-item" class:ok={it.ok} class:fail={!it.ok}>
+        <span class="run-badge" class:ok={it.ok} class:fail={!it.ok}>{it.ok ? 'OK' : '失败'}</span>
+        <span class="run-cmd">{it.cmd || ''}</span>
+        {#if it.label && it.label !== it.cmd}<span class="step-label">{it.label}</span>{/if}
+        <span class="run-note">{it.error || it.status || it.note || ''} · {it.duration || 0}s</span>
+        {#if respVals(it).length}
+        <div class="run-resp"><span class="rr-label">返回</span><code>{respVals(it).join('\n')}</code></div>
+        {/if}
+      </div>
+      {/each}
+    </div>
+  </div>
+  {/if}
+
+  <!-- add / edit dialog -->
+  <Dialog dialogKey="presets" open={() => dlg().open && dlg().kind === 'edit'} title={() => editId() ? '编辑场景' : '新建场景'} onClose={closeDlg}>
+    <div class="form-grid">
+      <div class="field"><label>标识（英文/数字，唯一）</label>
+        <input class="inp" id="pId" value={f().id} disabled={!!editId()} on:input={(e) => updF('id', (e.target as HTMLInputElement).value)}>
+      </div>
+      <div class="field"><label>名称</label>
+        <input class="inp" id="pName" value={f().name} on:input={(e) => updF('name', (e.target as HTMLInputElement).value)}>
+      </div>
+      <div class="field"><label>图标</label>
+        <button type="button" class="icon-pick-btn" id="pIcon" on:click={openIconPicker}><i class="lci" data-lucide={f().icon}></i></button>
+        <span class="hint" id="pIconName">{f().icon}</span>
+      </div>
+      <div class="field"><label>强调色</label>
+        <select class="sel" id="pAccent" on:change={(e) => updF('accent', (e.target as HTMLSelectElement).value)}>
+          {#each ['blue', 'violet', 'teal', 'amber', 'rose'] as c}
+          <option value={c} selected={c === f().accent}>{c}</option>
+          {/each}
+        </select>
+      </div>
+      <div class="field field-wide"><label>描述</label>
+        <input class="inp" id="pDesc" value={f().desc} on:input={(e) => updF('desc', (e.target as HTMLInputElement).value)}>
+      </div>
+      <div class="field"><label>危险操作</label>
+        <label class="switch"><input type="checkbox" id="pDanger" checked={f().danger} on:change={(e) => updF('danger', (e.target as HTMLInputElement).checked)}><span>擦除/复位类</span></label>
+      </div>
+    </div>
+    <div class="field" style="margin-top:10px"><label>参数定义（JSON 数组，可空）</label>
+      <textarea class="inp mono" id="pFields" rows="5" placeholder={'[{"key":"deui","label":"DevEUI","type":"hex","size":8}]'} on:input={(e) => updF('fields', (e.target as HTMLTextAreaElement).value)}>{f().fields}</textarea>
+      <span class="hint">字段：key/label/type(text|number|select|bool|hex)/default/options/when/size</span>
+    </div>
+    <div class="field" style="margin-top:8px"><label>指令步骤（JSON 数组）</label>
+      <textarea class="inp mono" id="pSteps" rows="8" placeholder={'[{"cmd":"AT+VER=?"}]'} on:input={(e) => updF('steps', (e.target as HTMLTextAreaElement).value)}>{f().steps}</textarea>
+      <span class="hint">支持 {'{参数}'} 占位符与 when 条件；每条：cmd/label/delay/wait_event/expect/note</span>
+    </div>
+    <button class="ghost-btn" slot="foot" on:click={closeDlg}>取消</button>
+    <button class="primary-btn" slot="foot" on:click={saveEdit}>保存</button>
+  </Dialog>
+
+  <!-- delete confirm -->
+  <Dialog dialogKey="presets" open={() => dlg().open && dlg().kind === 'del'} title={() => '删除场景'} onClose={closeDlg}>
+    <p>确定删除「{delTarget() ? delTarget()!.name : ''}」？</p>
+    <button class="ghost-btn" slot="foot" on:click={closeDlg}>取消</button>
+    <button class="primary-btn" slot="foot" on:click={confirmDel}>删除</button>
+  </Dialog>
+
+  <!-- danger confirm -->
+  <Dialog dialogKey="presets" open={() => dlg().open && dlg().kind === 'danger'} title={() => '危险操作确认'} onClose={closeDlg}>
+    <p>即将执行「{selected() ? selected().name : ''}」，该操作会擦除模组上下文并复位。确定继续？</p>
+    <button class="ghost-btn" slot="foot" on:click={closeDlg}>取消</button>
+    <button class="primary-btn" slot="foot" on:click={doRunPreset}>确认执行</button>
+  </Dialog>
+
+  <!-- icon picker (stacked above the edit dialog) -->
+  <Dialog dialogKey="presets" open={() => iconOpen()} title={() => '选择图标'} onClose={() => $setState('iconOpen', false)}>
+    <div class="icon-picker">
+      <input class="inp" id="ipSearch" placeholder="搜索图标，如 battery / wifi / rocket" value={iconFilter()} on:input={onIconSearch}>
+      <div class="icon-grid" id="ipGrid" on:click={onIconClick}>
+        {#each iconList() as n (n)}
+        <button type="button" class="ic-cell " class:on={n === f().icon} data-n={n} title={() => n}>
+          <i class="lci" data-lucide={n}></i><span>{n}</span>
+        </button>
+        {/each}
+      </div>
+    </div>
+    <button class="ghost-btn" slot="foot" on:click={() => $setState('iconOpen', false)}>取消</button>
+  </Dialog>
+</section>

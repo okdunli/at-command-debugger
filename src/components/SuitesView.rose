@@ -1,0 +1,681 @@
+<script>
+  // SuitesView - 1:1 port of index.html #page-suites + the matching app.js logic
+  // (renderSuites / toggleCase+sel buttons / runSuite / progress table / export
+  // report / saveBaselineDialog / compareRunDialog / showBaselineDiff / suite
+  // script export / suite CRUD + chip & panel DnD / pin).
+  // Contract (docs/contract.md v3): `s` is the shell's live state GETTER - read
+  // `s()` everywhere (template + script + $effect all track it); onSet/onCall/
+  // onToast/onGoto stay plain function props. Prop declarations use
+  // `export let x = null as any` so rosezm's extractExports binds the prop.
+  // Finish-toasts / baselineDiff hand-off / lastResult are owned by the shell.
+  import Dialog from './Dialog.rose';
+  export let s = null as any;
+  export let onSet = null as any;
+  export let onCall = null as any;
+  export let onToast = null as any;
+  export let onGoto = null as any;
+
+  // --- view-local state (rosezm: read with x(), write ONLY $setState('x', v)) ---
+  let selected = $state<string[]>([]);        // selected case ids
+  let compareBaseline = $state('');           // baseline handed to the next run
+  let panelOpen = $state(false);              // #suitePanel shown flag (run start)
+  let seedProfile = $state<any>(null);        // profile whose cases were seeded
+  let dlg = $state({ open: false, id: '', title: '' });
+
+  // save-baseline / compare-run dialog fields
+  let blName = $state('');
+  let blPick = $state('');
+  let baselines = $state<any[]>([]);
+
+  // add/edit suite dialog fields
+  let edTarget = $state('');                  // '' = new suite, else suite id
+  let edId = $state('');
+  let edName = $state('');
+  let edIcon = $state('check');
+  let iconOpen = $state(false);
+  let iconKw = $state('');
+  let iconNames = $state<string[]>([]);
+  let edDesc = $state('');
+  let edCases = $state('[]');
+  let delTarget = $state<any>(null);
+
+  // transient (non-reactive) drag bookkeeping
+  let dragCase = '';
+  let dragSuite = '';
+
+  function boot(): any { return (s && s().boot) || null; }
+  function suites(): any[] { const b = boot(); return (b && b.suites) || []; }
+  function caseCount(): number { const b = boot(); return (b && b.case_count) || 0; }
+  function editMode(): boolean { const b = boot(); return !!(b && b.edit_mode); }
+
+  function isSel(id: string): boolean { return selected().indexOf(id) >= 0; }
+
+  function pinnedOn(id: string): boolean {
+    const b = boot();
+    const home = (b && b.home) || {};
+    const arr = home.pinned || [];
+    return arr.some((p: any) => p && p.kind === 'suite' && p.id === id);
+  }
+
+  // ---- selection (original renderSuites default: !skip && !dangerous) ----
+  function seedIds(): string[] {
+    const ids: string[] = [];
+    const list = suites();
+    for (const su of list) {
+      const cs = su.cases || [];
+      for (const c of cs) { if (!c.skip && !c.dangerous) ids.push(c.id); }
+    }
+    return ids;
+  }
+  function allIds(): string[] {
+    const ids: string[] = [];
+    for (const su of suites()) { const cs = su.cases || []; for (const c of cs) ids.push(c.id); }
+    return ids;
+  }
+  function selAll() { const ids = allIds(); $setState('selected', ids); }
+  function selNone() { $setState('selected', []); }
+  function selSafe() { const ids = seedIds(); $setState('selected', ids); }
+  function selGroup(sid: string) {
+    const su = suites().find((x: any) => x.id === sid);
+    if (!su) return;
+    const next = selected().slice();
+    for (const c of (su.cases || [])) { if (next.indexOf(c.id) < 0) next.push(c.id); }
+    $setState('selected', next);
+  }
+  function clrGroup(sid: string) {
+    const su = suites().find((x: any) => x.id === sid);
+    if (!su) return;
+    const drop: string[] = [];
+    for (const c of (su.cases || [])) drop.push(c.id);
+    const next = selected().filter((x: string) => drop.indexOf(x) < 0);
+    $setState('selected', next);
+  }
+  function chipClick(e: any) {
+    const t = e && e.target;
+    if (t && t.closest && t.closest('.drag-h')) return;
+    const el = e.currentTarget;
+    const id = el ? String(el.getAttribute('data-case') || '') : '';
+    if (!id) return;
+    const cur = selected();
+    const next = cur.indexOf(id) >= 0 ? cur.filter((x: string) => x !== id) : cur.concat([id]);
+    $setState('selected', next);
+  }
+
+  // ---- run (guards + toasts per brief; busy = original busyState) ----
+  async function runSuite() {
+    if (s && (s().busy || s().busyExtra)) { onToast('已有任务在执行', 'warn'); return; }
+    const st = s && s().status;
+    if (!(st && st.connected)) { onToast('请先连接串口', 'warn'); return; }
+    if (!selected().length) { onToast('没有选中任何用例', 'warn'); return; }
+    const ids = selected().slice();
+    const baseline = String(compareBaseline() || '');
+    const r = await onCall('run_suite', { case_ids: ids, baseline });
+    $setState('compareBaseline', '');
+    if (r && r.ok) {
+      $setState('panelOpen', true);
+      onToast('开始运行 ' + r.count + ' 个用例' +
+        (r.baseline ? '（对比基线：' + r.baseline + '）' : ''), 'ok');
+      try {
+        const el = document.getElementById('suitePanel');
+        if (el && el.scrollIntoView) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      } catch (e) { /* noop */ }
+    } else onToast((r && r.error) || '运行失败', 'err');
+  }
+
+  async function cancelSuite() {
+    await onCall('cancel_run');
+    onToast('已请求停止', 'info');
+  }
+
+  // re-seed the default selection whenever the active profile changes
+  $effect(() => {
+    const sp = seedProfile();
+    const b = s && s().boot;
+    if (!b) return;
+    const pid = b.profile_id == null ? '' : String(b.profile_id);
+    if (pid === sp) return;
+    $setState('seedProfile', pid);
+    const ids = seedIds();
+    $setState('selected', ids);
+  });
+
+  // ---- report export (md/csv/html/json) ----
+  async function exportReport(fmt: string) {
+    const r = await onCall('export_report', { fmt });
+    if (r && r.ok) {
+      onToast('已导出：' + r.path, 'ok');
+      await onCall('open_path', { path: r.path });
+    } else onToast((r && r.error) || '导出失败', 'err');
+  }
+
+  // ---- baseline dialogs (lastResult is shell-maintained, as S.lastResult was) ----
+  function hasResult(): boolean {
+    const lr = s && s().lastResult;
+    return !!(lr && lr.total);
+  }
+  function lastSumTotal(): number {
+    const lr = s && s().lastResult;
+    return (lr && lr.total) || 0;
+  }
+  function openSaveBaseline() {
+    if (!hasResult()) { onToast('还没有套件结果，请先运行一次', 'warn'); return; }
+    const b = boot();
+    const def = new Date().toTimeString().slice(0, 5).replace(':', '') +
+      '-' + String((b && b.profile_id) || 'at');
+    $setState('blName', def);
+    patchDlg({ open: true, id: 'saveBaseline', title: '保存基线' });
+  }
+  async function doSaveBaseline() {
+    const name = String(blName() || '').trim();
+    closeDlg();
+    const r = await onCall('save_baseline', { name });
+    if (r && r.ok) onToast('基线已保存：' + r.name + '（' + r.count + ' 用例）', 'ok');
+    else onToast((r && r.error) || '保存失败', 'err');
+  }
+  async function openCompareRun() {
+    let r: any = null;
+    try { r = await onCall('list_baselines'); } catch (e) { r = null; }
+    const list = (r && r.baselines) || [];
+    if (!list.length) { onToast('还没有基线，请先「保存基线」', 'warn'); return; }
+    const arr = list.slice();
+    $setState('baselines', arr);
+    const first = String((arr[0] && arr[0].name) || '');
+    $setState('blPick', first);
+    patchDlg({ open: true, id: 'compareRun', title: '对比运行（选基线）' });
+  }
+  function pickBl(name: string) { $setState('blPick', name); }
+  function startCompareRun() {
+    const pick = String(blPick() || '');
+    closeDlg();
+    if (!pick) return;
+    $setState('compareBaseline', pick);
+    void runSuite();
+  }
+
+  // ---- suite script export (.at.txt) ----
+  function scriptHeader(title: string, desc: string): string {
+    const b = boot();
+    const lines = ['# ==============================================',
+      '# ' + String((b && b.profile_name) || 'AT 模组') + ' · ' + title,
+      '# 导出自 AT指令调试台 · ' + new Date().toLocaleString(),
+      desc ? '# 说明：' + desc : '',
+      '# 用法：逐行发送 AT 指令；# 开头为注释，WAIT 表示等待事件',
+      '# =============================================='];
+    const out: string[] = [];
+    for (const l of lines) { if (l) out.push(l); }
+    return out.join('\r\n');
+  }
+  function buildSuiteScript(su: any): string {
+    const cases = (su && su.cases) || [];
+    const lines = [scriptHeader('测试套件：' + su.name + '（' + cases.length + ' 用例）', su.desc || '')];
+    cases.forEach((c: any, i: number) => {
+      lines.push('', '# [用例 ' + (i + 1) + '] ' + c.name + (c.skip ? '（默认跳过）' : ''));
+      if (c.note) lines.push('# 注：' + c.note);
+      if (c.expect) lines.push('# 期望：' + c.expect);
+      lines.push(c.cmd);
+    });
+    return lines.join('\r\n') + '\r\n';
+  }
+  function downloadText(fname: string, text: string) {
+    try {
+      const blob = new Blob(['\ufeff' + text], { type: 'text/plain;charset=utf-8' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = fname;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      const href = a.href;
+      setTimeout(() => URL.revokeObjectURL(href), 3000);
+    } catch (e) { /* noop */ }
+  }
+  function exportSuiteScript(id: string) {
+    const su = suites().find((x: any) => x.id === id);
+    if (!su) { onToast('找不到该套件', 'err'); return; }
+    const b = boot();
+    downloadText(String((b && b.profile_id) || 'at') + '-suite-' + id + '.at.txt', buildSuiteScript(su));
+    onToast('已导出 AT 脚本：' + su.name, 'ok');
+  }
+
+  // ---- pin to dashboard ----
+  async function togglePin(id: string) {
+    const b = boot() || {};
+    const lit = pinnedOn(id);
+    if (lit) {
+      const r = await onCall('unpin_item', { kind: 'suite', item_id: id });
+      if (r && r.ok) {
+        onSet('boot', { ...b, home: r });
+        onToast('已取消收藏', 'ok');
+      } else onToast((r && r.error) || '取消收藏失败', 'err');
+    } else {
+      const r = await onCall('pin_item', { kind: 'suite', item_id: id });
+      if (r && r.ok) {
+        onSet('boot', { ...b, home: r });
+        onToast('已钉到首页快速操作', 'ok');
+      } else onToast((r && r.error) || '收藏失败', 'err');
+    }
+  }
+
+  // ---- add / edit / delete suite ----
+  function openSuiteEdit(id: string) {
+    const list = suites();
+    const su = id ? list.find((x: any) => x.id === id) : null;
+    if (su) {
+      const tgt = String(su.id);
+      const nm = String(su.name || '');
+      const ic = String(su.icon || 'check');
+      const de = String(su.desc || '');
+      const cs = JSON.stringify(su.cases || [], null, 1);
+      $setState('edTarget', tgt);
+      $setState('edId', tgt);
+      $setState('edName', nm);
+      $setState('edIcon', ic);
+      $setState('edDesc', de);
+      $setState('edCases', cs);
+      patchDlg({ open: true, id: 'suiteEdit', title: '编辑套件' });
+    } else {
+      $setState('edTarget', '');
+      $setState('edId', '');
+      $setState('edName', '');
+      $setState('edIcon', 'check');
+      $setState('edDesc', '');
+      $setState('edCases', '[]');
+      patchDlg({ open: true, id: 'suiteEdit', title: '新建套件' });
+    }
+  }
+  async function saveSuiteEdit() {
+    const target = String(edTarget() || '');
+    closeDlg();
+    let parsed: any[] = [];
+    try {
+      const raw = String(edCases() || '').trim() || '[]';
+      parsed = JSON.parse(raw);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      onToast('JSON 解析失败：' + msg, 'err');
+      return;
+    }
+    const payload = {
+      id: target || String(edId() || '').trim(),
+      name: String(edName() || '').trim() || '未命名',
+      icon: String(edIcon() || '').trim() || 'check',
+      desc: String(edDesc() || '').trim(),
+      cases: parsed,
+    };
+    if (!payload.id) { onToast('请填写标识', 'warn'); return; }
+    const r = target
+      ? await onCall('update_suite', { suite_id: target, payload })
+      : await onCall('add_suite', { payload });
+    if (r && r.ok) {
+      const b = boot() || {};
+      onSet('boot', { ...b, suites: r.suites || b.suites });
+      onToast('已保存', 'ok');
+    } else onToast((r && r.error) || '保存失败', 'err');
+  }
+  function openDelSuite(id: string) {
+    const su = suites().find((x: any) => x.id === id);
+    const o = { id: String(id), name: String((su && su.name) || id) };
+    $setState('delTarget', o);
+    patchDlg({ open: true, id: 'delSuite', title: '删除套件' });
+  }
+  async function confirmDelSuite() {
+    const t = delTarget();
+    closeDlg();
+    if (!t) return;
+    const r = await onCall('delete_suite', { suite_id: t.id });
+    if (r && r.ok) {
+      const b = boot() || {};
+      onSet('boot', { ...b, suites: r.suites || b.suites });
+      onToast('已删除', 'ok');
+    } else onToast((r && r.error) || '删除失败', 'err');
+  }
+
+  // ---- dialog plumbing ----
+  function patchDlg(o: any) { const next = { ...dlg(), ...o }; $setState('dlg', next);
+    try { document.dispatchEvent(new CustomEvent('rosezm:dialog-sync', { detail: { reopen: next.open === true, key: 'suites' } })); } catch (e) { /* noop */ } }
+  function closeDlg() { const next = { open: false, id: '', title: '' }; $setState('dlg', next);
+    try { document.dispatchEvent(new CustomEvent('rosezm:dialog-sync')); } catch (e) { /* noop */ } }
+  function closeDiff() { onSet('baselineDiff', null); }
+
+  // ---- progress rendering (s().progress, kind === 'suite') ----
+  function prog(): any { const p = s && s().progress; return p && p.kind === 'suite' ? p : null; }
+  function progItems(): any[] { const p = prog(); return (p && p.items) || []; }
+  function progDone(): number { const p = prog(); return (p && p.done) || 0; }
+  function progTotal(): number { const p = prog(); return (p && p.total) || 0; }
+  function progPct(): number { const t = progTotal(); return t ? Math.round(progDone() / t * 100) : 0; }
+  function progSummary(): any { const p = prog(); return (p && p.finished && p.summary) || null; }
+  function sumRate(): number { const sm = progSummary(); return sm && sm.total ? Math.round(sm.passed / sm.total * 100) : 0; }
+  function respOf(it: any): string[] {
+    const st = String((it && it.status) || '').trim();
+    const lines = ((it && it.lines) || []) as any[];
+    return lines.map((l) => String(l).trim()).filter((l) => l && l !== st);
+  }
+
+  // ---- chip DnD (edit mode) → set_suite_cases with reordered cases ----
+  function chipDragStart(e: any) {
+    if (!editMode()) { if (e && e.preventDefault) e.preventDefault(); return; }
+    const el = e.currentTarget;
+    dragCase = el ? String(el.getAttribute('data-case') || '') : '';
+    if (el && el.classList) el.classList.add('dragging');
+    try {
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', dragCase);
+    } catch (err) { /* ignore */ }
+  }
+  function chipDragEnd(e: any) {
+    const el = e.currentTarget;
+    if (el && el.classList) el.classList.remove('dragging');
+    dragCase = '';
+  }
+  function chipDragOver(e: any) {
+    if (!editMode() || !dragCase) return;
+    e.preventDefault();
+  }
+  async function chipDrop(e: any) {
+    if (!editMode() || !dragCase) { if (e && e.preventDefault) e.preventDefault(); return; }
+    e.preventDefault();
+    const el = e.currentTarget;
+    const overId = el ? String(el.getAttribute('data-case') || '') : '';
+    const movedId = dragCase;
+    dragCase = '';
+    if (!overId || !movedId || overId === movedId) return;
+    const row = el && el.closest ? el.closest('[data-suite]') : null;
+    const sid = row ? String(row.getAttribute('data-suite') || '') : '';
+    if (!sid) return;
+    const su = suites().find((x: any) => x.id === sid);
+    if (!su) return;
+    const cases = (su.cases || []).slice();
+    const from = cases.findIndex((c: any) => c.id === movedId);
+    if (from < 0) return;
+    const moved = cases.splice(from, 1)[0];
+    let to = cases.findIndex((c: any) => c.id === overId);
+    if (to < 0) to = cases.length;
+    else {
+      const r = el.getBoundingClientRect();
+      if ((e.clientY - r.top) > r.height / 2) to = to + 1;
+    }
+    cases.splice(to, 0, moved);
+    await commitSuiteCases(sid, cases);
+  }
+  async function commitSuiteCases(sid: string, cases: any[]) {
+    const b = boot() || {};
+    const list = (b.suites || []).slice();
+    const idx = list.findIndex((x: any) => x.id === sid);
+    if (idx >= 0) {
+      const next = list.slice();
+      next[idx] = { ...list[idx], cases };
+      onSet('boot', { ...b, suites: next });
+    }
+    const r = await onCall('set_suite_cases', { suite_id: sid, cases });
+    if (!r || !r.ok) onToast((r && r.error) || '保存顺序失败', 'err');
+    else onToast('已更新用例顺序', 'ok');
+  }
+
+  // ---- suite panel DnD (edit mode) → reorder_suites ----
+  function panelDragStart(e: any) {
+    if (!editMode()) { if (e && e.preventDefault) e.preventDefault(); return; }
+    const el = e.currentTarget;
+    dragSuite = el ? String(el.getAttribute('data-suite') || '') : '';
+    if (el && el.classList) el.classList.add('dragging');
+    try {
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', dragSuite);
+    } catch (err) { /* ignore */ }
+  }
+  function panelDragEnd(e: any) {
+    const el = e.currentTarget;
+    if (el && el.classList) el.classList.remove('dragging');
+    dragSuite = '';
+  }
+  function panelDragOver(e: any) {
+    if (!editMode() || !dragSuite) return;
+    e.preventDefault();
+  }
+  async function panelDrop(e: any) {
+    if (!editMode() || !dragSuite) { if (e && e.preventDefault) e.preventDefault(); return; }
+    e.preventDefault();
+    const el = e.currentTarget;
+    const overId = el ? String(el.getAttribute('data-suite') || '') : '';
+    const srcId = dragSuite;
+    dragSuite = '';
+    if (!overId || !srcId || overId === srcId) return;
+    const list = suites().slice();
+    const from = list.findIndex((x: any) => x.id === srcId);
+    if (from < 0) return;
+    const moved = list.splice(from, 1)[0];
+    let to = list.findIndex((x: any) => x.id === overId);
+    if (to < 0) to = list.length;
+    else {
+      const r = el.getBoundingClientRect();
+      if ((e.clientY - r.top) > r.height / 2) to = to + 1;
+    }
+    list.splice(to, 0, moved);
+    const ids = list.map((x: any) => x.id);
+    const b = boot() || {};
+    onSet('boot', { ...b, suites: list });
+    const r2 = await onCall('reorder_suites', { ids });
+    if (r2 && r2.ok) {
+      const b2 = boot() || {};
+      onSet('boot', { ...b2, suites: r2.suites || list });
+      onToast('已保存顺序', 'ok');
+    } else onToast((r2 && r2.error) || '保存顺序失败', 'err');
+  }
+
+  // Suite-edit icon picker (original shared iconPicker modal): the same
+  // LUCIDE_ICONS grid the preset editor uses, stacked above the edit dialog.
+  function openSuiteIconPicker() {
+    const names = (globalThis as any).LUCIDE_ICONS;
+    $setState('iconNames', Array.isArray(names) ? names.slice() : []);
+    $setState('iconKw', '');
+    $setState('iconOpen', true);
+    try { document.dispatchEvent(new CustomEvent('rosezm:dialog-sync', { detail: { reopen: true, key: 'suites' } })); } catch (e) { /* noop */ }
+  }
+  function suiteIconList(): string[] {
+    const kw = String(iconKw() || '').toLowerCase();
+    const all = iconNames() || [];
+    return kw ? all.filter((n) => n.indexOf(kw) >= 0) : all;
+  }
+  function pickSuiteIcon(e: Event) {
+    const t = e.target as HTMLElement;
+    const cell = t && t.closest ? (t.closest('.ic-cell') as HTMLElement) : null;
+    if (cell && cell.dataset.n) $setState('edIcon', cell.dataset.n);
+    $setState('iconOpen', false);
+    try { document.dispatchEvent(new CustomEvent('rosezm:dialog-sync')); } catch (e) { /* noop */ }
+  }
+
+  // ---- dialogs ----
+  // Esc (shell) resets this view's local dialog state so a later open is a
+  // real false -> true transition; the Dialog child keeps its own latch.
+  onMount(() => {
+    const __resetDlg = () => { $setState('dlg', { open: false, id: '', title: '' }); $setState('iconOpen', false); };
+    document.addEventListener('rosezm:dialog-reset', __resetDlg);
+    onCleanup(() => document.removeEventListener('rosezm:dialog-reset', __resetDlg));
+  });
+</script>
+
+    <section class="page " class:active={s && s().page==='suites'} id="page-suites">
+      <div class="page-head">
+        <h1 data-i18n="suite.title">测试套件</h1>
+        <p class="page-sub" id="suiteCount">共 {caseCount()} 个用例</p>
+        <div class="head-actions">
+          <button class="ghost-btn" id="btnSelAll" on:click={selAll}>全选</button>
+          <button class="ghost-btn" id="btnSelNone" on:click={selNone}>全不选</button>
+          <button class="ghost-btn" id="btnSelSafe" on:click={selSafe}>仅安全项</button>
+          <button class="ghost-btn" id="btnSaveBaseline" title="把最近一次套件结果存为基线快照" on:click={openSaveBaseline}>
+            <span data-icon="anchor"></span>保存基线</button>
+          <button class="ghost-btn" id="btnCompareRun" title="选一条基线重跑选中用例并逐条 diff（实机 vs SIM / 升级前后回归）" on:click={openCompareRun}>
+            <span data-icon="git-compare"></span>对比运行</button>
+          <button class="primary-btn edit-only" id="btnAddSuite" on:click={() => openSuiteEdit('')}>+ 新建套件</button>
+          <button class="primary-btn" id="btnRunSuite" disabled={!!(s && (s().busy || s().busyExtra))} on:click={runSuite}>运行选中</button>
+        </div>
+      </div>
+      <div id="suiteList">
+        {#each suites() as suite, si (suite.id)}
+        <div class="panel" data-suite={suite.id} style="animation-delay:{si * 50}ms"
+          draggable={editMode()}
+          on:dragstart={panelDragStart}
+          on:dragend={panelDragEnd}
+          on:dragover={panelDragOver}
+          on:drop={panelDrop}>
+          <div class="panel-head"><span class="nav-ico"><i class="lci" data-lucide={suite.icon || 'check'}></i></span><h3>{suite.name}</h3><span class="cmd-cat">{(suite.cases || []).length} 个用例</span><div class="head-actions">
+            <button class="ghost-btn" data-sel={suite.id} on:click={() => selGroup(suite.id)}>全选本组</button>
+            <button class="ghost-btn" data-clr={suite.id} on:click={() => clrGroup(suite.id)}>清空本组</button>
+            <button class="ghost-btn" data-exp={suite.id} title="导出为可回放的 AT 脚本文本" on:click={() => exportSuiteScript(suite.id)}>
+              <i class="lci" data-lucide="download"></i>导出脚本</button>
+            </div><div class="suite-tools edit-only">
+            <button class="pin-btn " class:pinned={pinnedOn(suite.id)} data-pinref={'suite:' + suite.id} title={() => pinnedOn(suite.id) ? '取消收藏' : '钉到首页快速操作'} on:click={() => togglePin(suite.id)}><i class="lci" data-lucide="star"></i></button>
+            <button data-act="edit" title="编辑" on:click={() => openSuiteEdit(suite.id)}><i class="lci" data-lucide="pencil"></i></button>
+            <button data-act="del" title="删除" on:click={() => openDelSuite(suite.id)}><i class="lci" data-lucide="trash-2"></i></button>
+            </div></div>
+          <div class="cmd-meta" style="margin-bottom:8px">{suite.desc}</div>
+          <div class="chip-row">
+            {#each (suite.cases || []) as c (c.id)}
+            <button class="chip  " class:dnd={editMode()} class:on={isSel(c.id)} data-case={c.id}
+              title={() => String(c.cmd || '') + (c.note ? ' — ' + c.note : '')}
+              draggable={editMode()}
+              on:click={chipClick}
+              on:dragstart={chipDragStart}
+              on:dragend={chipDragEnd}
+              on:dragover={chipDragOver}
+              on:drop={chipDrop}>
+              {#if editMode()}<span class="drag-h" title="拖动排序">⠿</span>{/if}
+              {c.id} {c.name}{c.skip ? '（默认跳过）' : ''}</button>
+            {/each}
+          </div>
+        </div>
+        {/each}
+      </div>
+      <div class="panel" id="suitePanel" hidden={!(panelOpen() || prog())}>
+        <div class="panel-head">
+          <h3 data-i18n="suite.result">测试结果</h3>
+          <div class="head-actions">
+            <button class="ghost-btn" id="btnCancelSuite" on:click={cancelSuite}>停止</button>
+            <button class="ghost-btn" id="btnExportMd" on:click={() => exportReport('md')}>Markdown</button>
+            <button class="ghost-btn" id="btnExportCsv" on:click={() => exportReport('csv')}>CSV</button>
+            <button class="ghost-btn" id="btnExportHtml" on:click={() => exportReport('html')}>HTML</button>
+            <button class="ghost-btn" id="btnExportJson" on:click={() => exportReport('json')}>JSON</button>
+          </div>
+        </div>
+        <div class="progress-wrap">
+          <div class="progress-track"><div class="progress-fill" id="suiteFill" style="width:{progPct()}%"></div></div>
+          <div class="progress-text" id="suiteText">{progDone()} / {progTotal()}</div>
+        </div>
+        <div class="result-summary" id="suiteSummary">
+          {#if progSummary()}
+          <div class="sum-pill">总计<b>{progSummary().total}</b></div>
+          <div class="sum-pill ok">通过<b>{progSummary().passed}</b></div>
+          <div class="sum-pill fail">失败<b>{progSummary().failed}</b></div>
+          <div class="sum-pill">跳过<b>{progSummary().skipped || 0}</b></div>
+          <div class="sum-pill">通过率<b>{sumRate()}%</b></div>
+          <div class="sum-pill">耗时<b>{progSummary().duration || 0}s</b></div>
+          {/if}
+        </div>
+        <div class="result-table-wrap"><table class="result-table" id="suiteTable">
+          {#if progItems().length}
+          <thead><tr><th>#</th><th>用例</th><th>指令</th><th>返回值</th><th>结果</th><th>说明</th><th>耗时</th></tr></thead>
+          <tbody>
+            {#each progItems() as it, ti (ti)}
+            <tr>
+              <td>{it.index || ''}</td>
+              <td>{it.name || ''}</td>
+              <td><code>{it.cmd || ''}</code></td>
+              <td class="mono resp-cell">{#if respOf(it).length}{respOf(it).join('\n')}{/if}{#if !respOf(it).length}<span class="dim">-</span>{/if}</td>
+              <td>
+                {#if it.skipped}<span class="run-badge skip">跳过</span>{/if}
+                {#if !it.skipped && it.ok}<span class="run-badge ok">通过</span>{/if}
+                {#if !it.skipped && !it.ok}<span class="run-badge fail">失败</span>{/if}
+              </td>
+              <td>{it.reason || ''}</td>
+              <td>{it.duration || 0}s</td>
+            </tr>
+            {/each}
+          </tbody>
+          {/if}
+        </table></div>
+      </div>
+
+      <Dialog dialogKey="suites" open={() => dlg().open && dlg().id === 'saveBaseline'} title={() => dlg().title} onClose={closeDlg}>
+        <div class="field"><label>基线名称</label>
+          <input type="text" id="blName" class="inp" bind:value={blName}></div>
+        <p class="hint">保存最近一次套件运行的每条用例响应快照（{lastSumTotal()} 用例），之后可作为对比基准。</p>
+        <button class="ghost-btn" slot="foot" on:click={closeDlg}>取消</button>
+        <button class="primary-btn" slot="foot" on:click={doSaveBaseline}>保存</button>
+      </Dialog>
+
+      <Dialog dialogKey="suites" open={() => dlg().open && dlg().id === 'compareRun'} title={() => dlg().title} onClose={closeDlg}>
+        <div class="bl-list">
+          {#each baselines() as b, bi (b.name)}
+          <label class="bl-row"><input type="radio" name="blPick" checked={blPick() === b.name} on:change={() => pickBl(b.name)}> <b>{b.name}</b><span class="bl-meta">{b.profile_name || b.profile || ''} · {b.count} 用例 · {b.created}</span></label>
+          {/each}
+        </div>
+        <p class="hint">用所选基线重跑当前勾选用例：完成后逐条对比状态与响应行，差异高亮。适合固件升级前后回归、实机 vs SIM 对比。</p>
+        <button class="ghost-btn" slot="foot" on:click={closeDlg}>取消</button>
+        <button class="primary-btn" slot="foot" on:click={startCompareRun}>开始对比运行</button>
+      </Dialog>
+
+      <Dialog dialogKey="suites" open={() => dlg().open && dlg().id === 'suiteEdit'} title={() => dlg().title} onClose={closeDlg}>
+        <div class="form-grid">
+          <div class="field"><label>标识（英文/数字，唯一）</label>
+            <input class="inp" bind:value={edId} disabled={!!edTarget()}></div>
+          <div class="field"><label>名称</label><input class="inp" bind:value={edName}></div>
+          <div class="field"><label>图标</label>
+            <button type="button" class="icon-pick-btn" on:click={openSuiteIconPicker}><i class="lci" data-lucide={edIcon() || 'check'}></i></button>
+            <span class="hint">{edIcon() || 'check'}</span></div>
+          <div class="field field-wide"><label>描述</label><input class="inp" bind:value={edDesc}></div>
+        </div>
+        <div class="field" style="margin-top:10px"><label>用例（JSON 数组）</label>
+          <textarea class="inp mono" id="sCases" rows="10" placeholder={'[{"id":"c1","name":"读取版本","cmd":"AT+VER=?"}]'} bind:value={edCases}></textarea>
+          <span class="hint">每条：id / name / title / cmd / skip / dangerous / expect / note</span></div>
+        <button class="ghost-btn" slot="foot" on:click={closeDlg}>取消</button>
+        <button class="primary-btn" slot="foot" on:click={saveSuiteEdit}>保存</button>
+      </Dialog>
+
+      <Dialog dialogKey="suites" open={() => dlg().open && dlg().id === 'delSuite'} title={() => dlg().title} onClose={closeDlg}>
+        <p>确定删除「{delTarget() ? delTarget().name : ''}」？</p>
+        <button class="ghost-btn" slot="foot" on:click={closeDlg}>取消</button>
+        <button class="primary-btn" slot="foot" on:click={confirmDelSuite}>删除</button>
+      </Dialog>
+
+      <Dialog dialogKey="suites" open={() => !!(s && s().baselineDiff)} title={() => '基线对比：' + ((s && s().baselineDiff && s().baselineDiff.name) || '')} onClose={closeDiff}>
+        <div class="diff-sum">
+          <span class="st-chip"><b>{(s && s().baselineDiff && s().baselineDiff.same) || 0}</b> 一致</span>
+          <span class="st-chip " class:err={s && s().baselineDiff && s().baselineDiff.changed}><b>{(s && s().baselineDiff && s().baselineDiff.changed) || 0}</b> 有差异</span>
+          {#if s && s().baselineDiff && s().baselineDiff.missing}<span class="st-chip"><b>{s().baselineDiff.missing}</b> 新增用例</span>{/if}
+          {#if s && s().baselineDiff && s().baselineDiff.extra}<span class="st-chip"><b>{s().baselineDiff.extra}</b> 基线独有</span>{/if}
+        </div>
+        {#if s && s().baselineDiff && s().baselineDiff.diffs && s().baselineDiff.diffs.length}
+        <div class="diff-list">
+          {#each s().baselineDiff.diffs as d (d.id)}
+          <div class="diff-row">
+            <div class="diff-head"><b class="mono">{d.id}</b> {d.name}<span class="diff-cmd mono">{d.cmd}</span></div>
+            <div class="diff-line">状态：{d.b_status || '—'} → {d.n_status || '—'}　判定：{#if d.b_ok === true}<span class="diff-ok">PASS</span>{/if}{#if d.b_ok === false}<span class="diff-bad">FAIL</span>{/if}{#if d.b_ok !== true && d.b_ok !== false}—{/if} → {#if d.n_ok === true}<span class="diff-ok">PASS</span>{/if}{#if d.n_ok === false}<span class="diff-bad">FAIL</span>{/if}{#if d.n_ok !== true && d.n_ok !== false}—{/if}</div>
+            {#if d.removed && d.removed.length}
+            <div class="diff-line bad">{#each d.removed as rl, ri (ri)}{#if ri > 0}<br/>{/if}− {rl}{/each}</div>
+            {/if}
+            {#if d.added && d.added.length}
+            <div class="diff-line good">{#each d.added as al, ai (ai)}{#if ai > 0}<br/>{/if}+ {al}{/each}</div>
+            {/if}
+          </div>
+          {/each}
+        </div>
+        {/if}
+        {#if s && s().baselineDiff && !(s().baselineDiff.diffs && s().baselineDiff.diffs.length)}
+        <p class="hint" style="margin-top:10px">全部用例响应与基线一致，回归通过。</p>
+        {/if}
+        <button class="ghost-btn" slot="foot" on:click={closeDiff}>关闭</button>
+      </Dialog>
+    
+  <Dialog dialogKey="suites" open={() => iconOpen()} title={() => '选择图标'} onClose={() => $setState('iconOpen', false)}>
+    <div class="icon-picker">
+      <input class="inp" id="ipSearch" placeholder="搜索图标，如 battery / wifi / rocket" bind:value={iconKw}>
+      <div class="icon-grid" id="ipGrid" on:click={pickSuiteIcon}>
+        {#each suiteIconList() as n (n)}
+        <button type="button" class="ic-cell " class:on={n === edIcon()} data-n={n} title={() => n}>
+          <i class="lci" data-lucide={n}></i><span>{n}</span>
+        </button>
+        {/each}
+      </div>
+    </div>
+    <button class="ghost-btn" slot="foot" on:click={() => $setState('iconOpen', false)}>取消</button>
+  </Dialog>
+</section>

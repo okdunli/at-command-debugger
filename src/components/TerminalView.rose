@@ -1,0 +1,644 @@
+<script>
+  // TerminalView - 1:1 port of index.html #page-terminal + app.js terminal
+  // logic: logLine/rerenderLogs (shell owns logs), sendFromBar, autocomplete,
+  // history, loop send, auto reply, bulk run, macro, RSSI chart, favorites,
+  // bookmarks, session files, export/clear, filters and shortcuts.
+  // Contract v3: shared state via s() (live getter); local state $state.
+  import Dialog from './Dialog.rose';
+  export let s = null as any;
+  export let onSet = null as any;
+  export let onCall = null as any;
+  export let onToast = null as any;
+  export let onGoto = null as any;
+
+  let filterType = $state('all');
+  let filterKw = $state('');
+  let sendMode = $state('text');
+  let cmdText = $state('');
+  let histIdx = $state(-1);
+  let acOpen = $state(false);
+  let acItems = $state<any[]>([]);
+  let acIdx = $state(-1);
+  let cmdSuggest = $state<any[]>([]);
+  let bulkOpen = $state(false);
+  let bulkText = $state('');
+  let bulkDelay = $state(300);
+  let bulkStopErr = $state(true);
+  let bulkRunning = $state(false);
+  let bulkStop = $state(false);
+  let bulkDone = $state(0);
+  let bulkOk = $state(0);
+  let bulkFail = $state(0);
+  let bulkTotal = $state(0);
+  let bulkProgText = $state('');
+  let sigOpen = $state(false);
+  let sigHist = $state<any[]>([]);
+  let sigValue = $state('--');
+  let sigSnr = $state('');
+  let sigStat = $state('min -- / max --');
+  let recording = $state(false);
+  let macro = $state<string[]>([]);
+  let dlg = $state({ open: false, id: '' });
+  let lsCmd = $state('');
+  let lsMode = $state('text');
+  let lsInt = $state(1000);
+  let lsRep = $state(0);
+  let arKw = $state('');
+  let arRep = $state('');
+  let arMode = $state('text');
+  let arDelay = $state(100);
+  let mcCmds = $state('');
+  let mcName = $state('');
+  let mcGroup = $state('宏');
+  let sessions = $state<any[]>([]);
+  let favList = $state<any[]>([]);
+  let markNote = $state('');
+  let sigTimer: any = null;
+  let kwTimer: any = null;
+  let keyHandler: any = null;
+
+  function cfg(): any { return (s && s().config) || {}; }
+  function ui(): any { return cfg().ui || {}; }
+  function connected(): boolean { return !!(s && s().status && s().status.connected); }
+  function busy(): boolean { return !!(s && (s().busy || s().busyExtra || bulkRunning())); }
+  function logs(): any[] { return (s && s().logs) || []; }
+  function serial(ev: any): boolean { return !!ev && (ev.dir === 'tx' || ev.dir === 'rx'); }
+  function showTs(): boolean { return ui().timestamps !== false; }
+  function fmtTs(ts: number): string {
+    const d = new Date((ts || Date.now() / 1000) * 1000);
+    const p = (n: number) => String(n).padStart(2, '0');
+    return p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds()) + '.' + String(d.getMilliseconds()).padStart(3, '0');
+  }
+  function dirLabel(dir: string): string {
+    return dir === 'tx' ? 'TX' : dir === 'sys' ? 'SYS' : dir === 'mark' ? 'MARK' : 'RX';
+  }
+  function logClass(l: any): string {
+    const t = String((l && l.text) || '').trim();
+    if (/^AT_ERROR|^AT_PARAM_ERROR|^AT_BUSY_ERROR|^AT_NO_NET|^AT_RX_ERROR|^AT_DUTY|^AT_CRYPTO/.test(t)) return 'err';
+    if (t === 'OK') return 'ok';
+    if (t.indexOf('+EVT') === 0) return 'evt';
+    return l && l.sim ? 'sim' : '';
+  }
+  function logTextClass(r: any): string {
+    if (r.hex) return 'log-text hex';
+    const c = logClass(r.l);
+    return c ? 'log-text ' + c : 'log-text';
+  }
+  function lineHex(l: any): string {
+    return (ui().hex_view && l && l.hex) ? String(l.hex) : String((l && l.text) || '');
+  }
+  function matches(l: any, f: any): boolean {
+    if (!l) return false;
+    if (f.type === 'tx' && (l.dir || 'rx') !== 'tx') return false;
+    if (f.type === 'rx' && (l.dir || 'rx') !== 'rx') return false;
+    if (f.kw) {
+      const k = String(f.kw).toUpperCase();
+      if (!String(l.text || '').toUpperCase().includes(k) && !String(l.hex || '').toUpperCase().includes(k)) return false;
+    }
+    return true;
+  }
+  // BUG.md workaround: each-row state (filters) travels with the row data,
+  // so the each source changes whenever a filter changes.
+  function termRows(): any[] {
+    const f = { type: filterType(), kw: filterKw() };
+    const ts = showTs();
+    const hex = ui().hex_view === true;
+    return logs().filter((l) => serial(l) && matches(l, f)).slice(-2000).map((l) => ({ l, ts, hex }));
+  }
+
+  function copyText(t: string) {
+    try { navigator.clipboard.writeText(t); } catch (e) {
+      const ta = document.createElement('textarea');
+      ta.value = t; document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy'); } catch (e2) { /* noop */ }
+      ta.remove();
+    }
+    onToast('已复制：' + t.slice(0, 40));
+  }
+  function copyLine(l: any) { copyText(String((l && l.text) || '')); }
+
+  async function saveUi(patchObj: Record<string, unknown>) {
+    const r: any = await onCall('save_config', { patch: { ui: patchObj } });
+    if (r && r.config) onSet('config', r.config);
+  }
+  async function onTgl(kind: string, v: boolean) {
+    if (kind === 'hex') await saveUi({ hex_view: v });
+    if (kind === 'ts') await saveUi({ timestamps: v });
+    if (kind === 'scroll') await saveUi({ auto_scroll: v });
+  }
+  function onKwInput(e: Event) {
+    const v = (e.target as HTMLInputElement).value;
+    if (kwTimer) clearTimeout(kwTimer);
+    kwTimer = setTimeout(() => $setState('filterKw', v), 160);
+  }
+
+  // ---- send bar (original sendFromBar/doSend/acUpdate/onCmdKey) ----
+  async function doSend(text: string, opts: any): Promise<any> {
+    const r: any = await onCall('send_command', opts ? { cmd: text, ...opts } : { cmd: text });
+    if (r && r.ok) {
+      onToast('已发送：' + text + ' → ' + (r.status || 'OK') + '（' + Math.round((r.duration || 0) * 1000) + ' ms）', 'ok');
+    } else {
+      onToast((r && r.error) || '发送失败', 'err');
+      if (r && r.hint) setTimeout(() => onToast(r.hint, 'warn', 9000), 350);
+    }
+    return r;
+  }
+  async function sendFromBar() {
+    const text = String(cmdText() || '').trim();
+    if (!text) return;
+    if (busy()) { onToast('批量任务执行中，已锁定下发', 'warn'); return; }
+    if (!connected()) { onToast('请先连接串口', 'warn'); return; }
+    if (sendMode() === 'hex') {
+      const r: any = await onCall('send_raw_hex', { hex_str: text });
+      onToast(r && r.ok ? '已发送 ' + r.written + ' 字节' : (r && r.error) || '发送失败', r && r.ok ? 'ok' : 'err');
+      return;
+    }
+    const opts = ui().append_crlf !== false ? null : { line_ending: 'NONE' };
+    const r = await doSend(text, opts);
+    if (r && r.ok) {
+      onSet('history', [text, ...(((s && s().history) || []).filter((h: string) => h !== text))]);
+      $setState('histIdx', -1);
+      $setState('cmdText', '');
+      $setState('acOpen', false);
+      if (recording()) $setState('macro', [...macro(), text]);
+    }
+  }
+  function acUpdate() {
+    const raw = String(cmdText() || '').trim().toUpperCase().replace(/\s+/g, '');
+    const pool = cmdSuggest() || [];
+    if (!pool.length || raw.length < 2 || raw.indexOf('AT') !== 0) { $setState('acOpen', false); return; }
+    const base = raw.replace(/^AT\+?/, 'AT+');
+    const items = pool.filter((c) => c.id && String(c.id).toUpperCase().startsWith(base) && String(c.id).toUpperCase() !== base).slice(0, 8);
+    $setState('acItems', items);
+    $setState('acIdx', -1);
+    $setState('acOpen', items.length > 0);
+  }
+  function acPick(i: number) {
+    const item = acItems()[i >= 0 ? i : acIdx()];
+    if (!item) return;
+    $setState('cmdText', String(item.id));
+    $setState('acOpen', false);
+    try { (document.getElementById('cmdInput') as HTMLTextAreaElement).focus(); } catch (e) { /* noop */ }
+  }
+  function onCmdInput(e: Event) {
+    $setState('cmdText', (e.target as HTMLTextAreaElement).value);
+    acUpdate();
+  }
+  function onCmdKey(e: KeyboardEvent) {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); $setState('acOpen', false); void sendFromBar(); return; }
+    const open = acOpen() && acItems().length;
+    if (e.key === 'ArrowDown' && open) { e.preventDefault(); $setState('acIdx', (acIdx() + 1) % acItems().length); return; }
+    if (e.key === 'ArrowUp' && open) { e.preventDefault(); $setState('acIdx', (acIdx() - 1 + acItems().length) % acItems().length); return; }
+    if (open && (e.key === 'Tab' || e.key === 'Enter')) { e.preventDefault(); acPick(acIdx() >= 0 ? acIdx() : 0); return; }
+    if (e.key === 'Escape' && open) { $setState('acOpen', false); return; }
+    const hist = (s && s().history) || [];
+    if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && hist.length) {
+      const t = e.target as HTMLTextAreaElement;
+      if (e.key === 'ArrowUp' && !t.selectionStart && !t.selectionEnd) {
+        e.preventDefault();
+        const n = Math.min(histIdx() + 1, hist.length - 1);
+        $setState('histIdx', n);
+        $setState('cmdText', n < 0 ? '' : hist[n]);
+      } else if (e.key === 'ArrowDown' && t.selectionStart === t.value.length && t.selectionEnd === t.value.length) {
+        e.preventDefault();
+        const n = Math.max(histIdx() - 1, -1);
+        $setState('histIdx', n);
+        $setState('cmdText', n < 0 ? '' : hist[n]);
+      }
+    }
+  }
+
+  // ---- loop send ----
+  async function openLoop() {
+    if (!connected()) { onToast('请先连接串口', 'warn'); return; }
+    const st: any = await onCall('loop_send_status');
+    $setState('dlg', { open: true, id: st && st.running ? 'loopStop' : 'loop' });
+    try { document.dispatchEvent(new CustomEvent('rosezm:dialog-sync', { detail: { reopen: true, key: 'terminal' } })); } catch (e) { /* noop */ }
+  }
+  async function startLoop() {
+    const r: any = await onCall('start_loop_send', { cmd: lsCmd(), interval_ms: Number(lsInt()) || 1000, repeat: Number(lsRep()) || 0, mode: lsMode() });
+    if (r && r.ok) onToast('循环发送已启动', 'ok');
+    else onToast((r && r.error) || '启动失败', 'err');
+    $setState('dlg', { open: false, id: '' });
+    try { document.dispatchEvent(new CustomEvent('rosezm:dialog-sync')); } catch (e) { /* noop */ }
+  }
+  async function stopLoop() {
+    await onCall('stop_loop_send');
+    onToast('已停止循环发送', 'ok');
+    $setState('dlg', { open: false, id: '' });
+    try { document.dispatchEvent(new CustomEvent('rosezm:dialog-sync')); } catch (e) { /* noop */ }
+  }
+  // ---- auto reply ----
+  async function openAutoReply() {
+    const cur: any = await onCall('get_auto_reply');
+    const rule = (cur && cur.rule) || null;
+    $setState('arKw', rule ? String(rule.keyword || '') : '');
+    $setState('arRep', rule ? String(rule.reply || '') : '');
+    $setState('arMode', rule ? String(rule.mode || 'text') : 'text');
+    $setState('arDelay', rule ? Number(rule.delay_ms || 100) : 100);
+    $setState('dlg', { open: true, id: 'autoReply' });
+    try { document.dispatchEvent(new CustomEvent('rosezm:dialog-sync', { detail: { reopen: true, key: 'terminal' } })); } catch (e) { /* noop */ }
+  }
+  async function saveAutoReply(off: boolean) {
+    const r: any = off ? await onCall('set_auto_reply', { keyword: '' }) : await onCall('set_auto_reply', { keyword: arKw(), reply: arRep(), delay_ms: Number(arDelay()) || 0, mode: arMode() });
+    if (r && r.ok) onToast(r.enabled ? '自动应答已启用：' + r.keyword : '自动应答已关闭', 'ok');
+    else onToast((r && r.error) || '设置失败', 'err');
+    $setState('dlg', { open: false, id: '' });
+    try { document.dispatchEvent(new CustomEvent('rosezm:dialog-sync')); } catch (e) { /* noop */ }
+  }
+  // ---- macro ----
+  function toggleMacro() {
+    if (!connected()) { onToast('请先连接串口', 'warn'); return; }
+    if (recording()) {
+      const d = new Date();
+      $setState('mcCmds', macro().join('\n'));
+      $setState('mcName', '宏 ' + d.toTimeString().slice(0, 5));
+      $setState('mcGroup', '宏');
+      $setState('dlg', { open: true, id: 'macro' });
+    try { document.dispatchEvent(new CustomEvent('rosezm:dialog-sync', { detail: { reopen: true, key: 'terminal' } })); } catch (e) { /* noop */ }
+      $setState('recording', false);
+    } else {
+      $setState('macro', []);
+      $setState('recording', true);
+      onToast('开始录制宏', 'ok');
+    }
+  }
+  async function saveMacro() {
+    const list = String(mcCmds() || '').replace(/\r/g, '').split('\n').map((x) => x.trim()).filter(Boolean);
+    if (!list.length) { onToast('指令序列为空', 'warn'); return; }
+    const r: any = await onCall('add_button', { name: mcName() || '宏', group: mcGroup() || '宏', icon: 'history', color: 'violet', commands: list, delay: 0.35 });
+    if (r && r.ok) onToast('已保存为常用按钮', 'ok');
+    else onToast((r && r.error) || '保存失败', 'err');
+    $setState('recording', false);
+    $setState('dlg', { open: false, id: '' });
+    try { document.dispatchEvent(new CustomEvent('rosezm:dialog-sync')); } catch (e) { /* noop */ }
+  }
+  // ---- signal panel + canvas ----
+  function drawSpark() {
+    const canvas: any = document.getElementById('sigCanvas');
+    if (!canvas || !sigHist().length) return;
+    const ctx = canvas.getContext('2d');
+    const w = canvas.width, h = canvas.height;
+    ctx.clearRect(0, 0, w, h);
+    const style = getComputedStyle(document.documentElement);
+    const accent = style.getPropertyValue('--accent').trim() || '#58a6ff';
+    const okc = style.getPropertyValue('--ok').trim() || '#3fb950';
+    ctx.strokeStyle = 'rgba(128,128,128,.18)'; ctx.lineWidth = 1;
+    for (let g = 1; g < 4; g++) { ctx.beginPath(); ctx.moveTo(0, h * g / 4); ctx.lineTo(w, h * g / 4); ctx.stroke(); }
+    const pts = sigHist();
+    const rvals = pts.map((p) => p.rssi);
+    const lo = Math.min(...rvals) - 3, hi = Math.max(...rvals) + 3, span = Math.max(6, hi - lo);
+    const x = (i: number) => pts.length === 1 ? w - 2 : (i / (pts.length - 1)) * (w - 4) + 2;
+    const y = (v: number) => h - 4 - ((v - lo) / span) * (h - 8);
+    ctx.beginPath(); ctx.moveTo(x(0), h);
+    pts.forEach((p, i) => ctx.lineTo(x(i), y(p.rssi)));
+    ctx.lineTo(x(pts.length - 1), h); ctx.closePath();
+    ctx.fillStyle = accent + '22'; ctx.fill();
+    ctx.beginPath(); pts.forEach((p, i) => (i ? ctx.lineTo(x(i), y(p.rssi)) : ctx.moveTo(x(i), y(p.rssi))));
+    ctx.strokeStyle = accent; ctx.lineWidth = 2; ctx.stroke();
+    ctx.beginPath(); ctx.arc(x(pts.length - 1), y(pts[pts.length - 1].rssi), 3.5, 0, Math.PI * 2);
+    ctx.fillStyle = okc; ctx.fill();
+    pts.forEach((p, i) => {
+      if (p.tx) { ctx.strokeStyle = accent; ctx.lineWidth = p.tx > 3 ? 3 : 1.5; ctx.beginPath(); ctx.moveTo(x(i), h); ctx.lineTo(x(i), h - 12); ctx.stroke(); }
+      if (p.rx) { ctx.strokeStyle = okc; ctx.lineWidth = p.rx > 6 ? 3 : 1.5; ctx.beginPath(); ctx.moveTo(x(i), 0); ctx.lineTo(x(i), 12); ctx.stroke(); }
+    });
+  }
+  async function sigSample() {
+    const r: any = await onCall('read_signal');
+    if (!r || !r.ok) { $setState('sigValue', (r && r.error) || '未解析到 RSSI'); return; }
+    const n = Number(r.rssi);
+    const last = sigHist();
+    const curLogs = logs().length;
+    const prev = last.length ? last[last.length - 1].logAt : curLogs;
+    const tx = logs().slice(prev, curLogs).filter((l) => l.dir === 'tx').length;
+    const rx = logs().slice(prev, curLogs).filter((l) => l.dir === 'rx').length;
+    const pts = [...last, { ts: Date.now() / 1000, rssi: n, snr: r.snr, tx, rx, logAt: curLogs }].slice(-60);
+    $setState('sigHist', pts);
+    $setState('sigValue', n + ' dBm');
+    $setState('sigSnr', typeof r.snr === 'number' ? 'SNR ' + r.snr + ' dB' : '');
+    $setState('sigStat', 'min ' + Math.min(...pts.map((p) => p.rssi)) + ' / max ' + Math.max(...pts.map((p) => p.rssi)));
+    drawSpark();
+  }
+  function toggleSig() {
+    if (sigOpen()) {
+      $setState('sigOpen', false);
+      if (sigTimer) clearInterval(sigTimer);
+      sigTimer = null;
+    } else {
+      if (!connected()) { onToast('请先连接串口', 'warn'); return; }
+      $setState('sigOpen', true);
+      void sigSample();
+      sigTimer = setInterval(() => void sigSample(), 2000);
+    }
+  }
+  // ---- bulk send ----
+  function sleepMs(ms: number) { return new Promise((r) => setTimeout(r, Math.max(0, ms))); }
+  async function bulkRun() {
+    if (busy()) { onToast('批量任务执行中，已锁定下发', 'warn'); return; }
+    if (!connected()) { onToast('请先连接串口', 'warn'); return; }
+    const lines = String(bulkText() || '').split('\n').map((l) => l.trim()).filter((l) => l && l[0] !== '#');
+    if (!lines.length) { onToast('没有可发送的指令', 'warn'); return; }
+    $setState('bulkRunning', true); $setState('bulkStop', false);
+    $setState('bulkDone', 0); $setState('bulkOk', 0); $setState('bulkFail', 0); $setState('bulkTotal', lines.length);
+    onSet('busyExtra', true);
+    for (let i = 0; i < lines.length; i++) {
+      if (bulkStop()) break;
+      const line = lines[i];
+      const wm = /^WAIT\s+([\d.]+)$/i.exec(line);
+      if (wm) { await sleepMs(parseFloat(wm[1]) * 1000); }
+      else if (!/^AT/i.test(line)) { $setState('bulkFail', bulkFail() + 1); }
+      else {
+        const r: any = await doSend(line, null);
+        if (r && r.ok) $setState('bulkOk', bulkOk() + 1);
+        else { $setState('bulkFail', bulkFail() + 1); if (bulkStopErr()) { $setState('bulkStop', true); } }
+      }
+      $setState('bulkDone', i + 1);
+      $setState('bulkProgText', '第 ' + (i + 1) + ' / ' + lines.length + ' 条 · ' + line.slice(0, 48));
+      await sleepMs(Number(bulkDelay()) || 0);
+    }
+    $setState('bulkRunning', false);
+    onSet('busyExtra', false);
+    onToast('结束：成功 ' + bulkOk() + ' / 失败 ' + bulkFail() + (bulkStop() ? '（已手动停止）' : ''), bulkFail() ? 'warn' : 'ok');
+  }
+  function stopBulk() { $setState('bulkStop', true); }
+  // ---- favorites / bookmarks / sessions / export ----
+  function favs(): any[] {
+    const f = ui().favorites;
+    return Array.isArray(f) ? f : [];
+  }
+  function isFav(t: string): boolean { return !!t && favs().some((x) => String(x.text || '') === t); }
+  async function toggleFav() {
+    const t = String(cmdText() || '').trim();
+    const was = isFav(t);
+    const next = was ? favs().filter((x) => String(x.text || '') !== t) : [...favs(), { text: t }];
+    await saveUi({ favorites: next });
+    onToast(was ? '已取消收藏' : '已添加到收藏', 'ok');
+  }
+  function openFavList() { $setState('favList', favs()); $setState('dlg', { open: true, id: 'fav' });
+    try { document.dispatchEvent(new CustomEvent('rosezm:dialog-sync', { detail: { reopen: true, key: 'terminal' } })); } catch (e) { /* noop */ } }
+  function favUse(t: string) { $setState('cmdText', t); $setState('dlg', { open: false, id: '' });
+    try { document.dispatchEvent(new CustomEvent('rosezm:dialog-sync', { detail: { reopen: true, key: 'terminal' } })); } catch (e) { /* noop */ } }
+  async function favDel(i: number) {
+    await saveUi({ favorites: favs().filter((_, k) => k !== i) });
+    $setState('favList', favs());
+  }
+  async function favMove(i: number, d: number) {
+    const a = favs().slice(); const j = i + d;
+    if (j < 0 || j >= a.length) return;
+    const tmp = a[i]; a[i] = a[j]; a[j] = tmp;
+    await saveUi({ favorites: a });
+    $setState('favList', favs());
+  }
+  function addMark() {
+    const note = String(markNote() || '').trim() || '用户标记';
+    onSet('logs', [...logs(), { dir: 'mark', text: '◆ ' + note, ts: Date.now() / 1000 }]);
+    $setState('dlg', { open: false, id: '' });
+    try { document.dispatchEvent(new CustomEvent('rosezm:dialog-sync')); } catch (e) { /* noop */ }
+    onToast('已插入标记', 'ok');
+  }
+  async function openSessions() {
+    const r: any = await onCall('list_session_logs');
+    $setState('sessions', (r && r.sessions) || []);
+    $setState('dlg', { open: true, id: 'sessions' });
+    try { document.dispatchEvent(new CustomEvent('rosezm:dialog-sync', { detail: { reopen: true, key: 'terminal' } })); } catch (e) { /* noop */ }
+  }
+  async function viewSession(name: string) {
+    const r: any = await onCall('read_session_log', { name });
+    if (r && r.ok) { onSet('logs', r.events || []); onGoto('terminal'); }
+    else onToast((r && r.error) || '日志不存在或为空', 'err');
+    $setState('dlg', { open: false, id: '' });
+    try { document.dispatchEvent(new CustomEvent('rosezm:dialog-sync')); } catch (e) { /* noop */ }
+  }
+  async function exportSession(name: string) {
+    const r: any = await onCall('export_session_log', { name, fmt: 'txt' });
+    if (r && r.ok) { onToast('已导出：' + r.path, 'ok'); void onCall('open_path', { path: r.path }); }
+    else onToast((r && r.error) || '导出失败', 'err');
+  }
+  async function deleteSession(name: string) {
+    const r: any = await onCall('delete_session_log', { name });
+    if (r && r.ok) onToast('已删除', 'ok');
+    else onToast((r && r.error) || '删除失败', 'err');
+    $setState('sessions', sessions().filter((x) => x.name !== name));
+  }
+  async function exportLogs() {
+    const r: any = await onCall('export_logs', { logs: logs().filter((l: any) => l.dir === 'tx' || l.dir === 'rx').slice(-2000) });
+    if (r && r.ok) { onToast('已导出：' + r.path, 'ok'); void onCall('open_path', { path: r.path }); }
+    else onToast((r && r.error) || '导出失败', 'err');
+  }
+  function clearLogs() { onSet('logs', []); }
+  async function resetCounters() { await onCall('reset_counters'); onToast('计数清零', 'ok'); }
+  function closeDlg() { $setState('dlg', { open: false, id: '' });
+    try { document.dispatchEvent(new CustomEvent('rosezm:dialog-sync')); } catch (e) { /* noop */ } }
+
+  onMount(() => {
+    const __resetDlg = () => { $setState('dlg', { open: false, id: '', title: '' }); };
+    document.addEventListener('rosezm:dialog-reset', __resetDlg);
+    onCleanup(() => document.removeEventListener('rosezm:dialog-reset', __resetDlg));
+
+    void (async () => {
+      const list: any = await onCall('get_commands', {});
+      $setState('cmdSuggest', Array.isArray(list) ? list : []);
+    })();
+    keyHandler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'f' || e.key === 'F')) { if (s().page === 'terminal') { e.preventDefault(); try { (document.getElementById('logSearch') as HTMLInputElement).focus(); } catch (err) { /* noop */ } } }
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'l' || e.key === 'L')) { e.preventDefault(); clearLogs(); }
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'h' || e.key === 'H')) { e.preventDefault(); void onTgl('hex', !ui().hex_view); }
+      if ((e.ctrlKey || e.metaKey) && (e.key === 't' || e.key === 'T')) { e.preventDefault(); void onTgl('ts', ui().timestamps === false); }
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'm' || e.key === 'M')) { e.preventDefault(); $setState('dlg', { open: true, id: 'mark' });
+    try { document.dispatchEvent(new CustomEvent('rosezm:dialog-sync', { detail: { reopen: true, key: 'terminal' } })); } catch (e) { /* noop */ } }
+    };
+    document.addEventListener('keydown', keyHandler);
+  });
+  onCleanup(() => {
+    if (sigTimer) clearInterval(sigTimer);
+    if (kwTimer) clearTimeout(kwTimer);
+    if (keyHandler) document.removeEventListener('keydown', keyHandler);
+  });
+</script>
+
+    <section class="page " class:active={s && s().page==='terminal'} id="page-terminal">
+      <div class="page-head">
+        <h1 data-i18n="term.title">串口终端</h1>
+        <p class="page-sub" data-i18n="term.sub">串口日志：仅串口收发数据（TX/RX）；系统消息、配置切换、连接事件等请见「程序日志」页</p>
+        <div class="head-actions">
+          <label class="switch"><input type="checkbox" id="chkAutoScroll" checked={ui().auto_scroll !== false} on:change={(e) => onTgl('scroll', (e.target as HTMLInputElement).checked)}>
+            <span>自动滚动</span></label>
+          <label class="switch"><input type="checkbox" id="chkTimestamp" checked={ui().timestamps !== false} on:change={(e) => onTgl('ts', (e.target as HTMLInputElement).checked)}>
+            <span>时间戳</span></label>
+          <label class="switch"><input type="checkbox" id="chkHexView" checked={ui().hex_view === true} on:change={(e) => onTgl('hex', (e.target as HTMLInputElement).checked)}>
+            <span>HEX 视图</span></label>
+          <button class="ghost-btn" id="btnLoopSend" on:click={openLoop}>
+            <span data-icon="repeat"></span>循环发送</button>
+          <button class="ghost-btn" id="btnAutoReply" on:click={openAutoReply}>
+            <span data-icon="reply"></span>自动应答</button>
+          <button class="ghost-btn" id="btnDtr" title="DTR 引脚电平切换（可用于模组复位/唤醒）">
+            <span data-icon="toggle-left"></span>DTR</button>
+          <button class="ghost-btn" id="btnRts" title="RTS 引脚电平切换（可用于 BOOT 选择）">
+            <span data-icon="toggle-right"></span>RTS</button>
+          <button class="ghost-btn" id="btnResetCounters" on:click={resetCounters}>
+            <span data-icon="rotate-ccw"></span>计数清零</button>
+          <button class="ghost-btn " class:recording={recording()} id="btnMacro" on:click={toggleMacro}>
+            <span data-icon="circle-dot"></span>录制宏</button>
+          <button class="ghost-btn " class:pin-on={sigOpen()} id="btnSignal" on:click={toggleSig}>
+            <span data-icon="activity"></span>信号监控</button>
+          <button class="ghost-btn " class:pin-on={bulkOpen()} id="btnBulk" on:click={() => $setState('bulkOpen', !bulkOpen())}>
+            <span data-icon="list-checks"></span>批量发送</button>
+          <button class="ghost-btn" id="btnMark" on:click={() => $setState('dlg', { open: true, id: 'mark' })}>
+            <span data-icon="bookmark"></span>标记</button>
+          <button class="ghost-btn" id="btnLogFiles" on:click={openSessions}>日志文件</button>
+          <button class="ghost-btn" id="btnExportLog" on:click={exportLogs}>导出日志</button>
+          <button class="ghost-btn danger" id="btnClearLog" on:click={clearLogs}>清空</button>
+        </div>
+      </div>
+      <div class="log-filter-bar">
+        <div class="filter-chips" id="logChips">
+          <button class="chip " class:on={filterType()==='all'} data-type="all" on:click={() => $setState('filterType', 'all')}>全部</button>
+          <button class="chip " class:on={filterType()==='tx'} data-type="tx" on:click={() => $setState('filterType', 'tx')}>TX</button>
+          <button class="chip " class:on={filterType()==='rx'} data-type="rx" on:click={() => $setState('filterType', 'rx')}>RX</button>
+        </div>
+        <div class="search-box">
+          <span class="search-ico" data-icon="search"></span>
+          <input type="text" id="logSearch" placeholder="过滤终端内容（Ctrl+F 聚焦）" on:input={onKwInput}>
+        </div>
+      </div>
+      {#if sigOpen()}
+  <div class="sig-panel" id="sigPanel">
+        <div class="sig-head">
+          <span class="sig-ico" data-icon="activity"></span>
+          <span class="sig-title">RSSI 趋势</span>
+          <span class="sig-value" id="sigValue">{sigValue()}</span>
+          {#if sigSnr()}<span class="sig-value snr" id="sigSnr">{sigSnr()}</span>{/if}
+          <span class="sig-stat" id="sigStat">{sigStat()}</span>
+          <span class="sig-hint" id="sigHint">每 2 秒采样 · 蓝刻度=TX 绿刻度=RX</span>
+        </div>
+        <canvas id="sigCanvas" width="860" height="64"></canvas>
+      </div>
+      {/if}
+      <div class="terminal" id="terminal">
+      {#each termRows() as r (r.l.ts + ':' + r.l.dir + ':' + r.l.text)}
+      <div class="log-line  " class:log-mark-line={r.l.dir === 'mark'} class:has-err={r.l.err && r.l.err.length}
+           title="点击复制该行内容" on:click={() => copyLine(r.l)}>
+        {#if r.ts}<span class="log-ts">{fmtTs(r.l.ts)}</span>{/if}
+        <span class={r.l.dir === 'tx' ? 'log-dir tx' : r.l.dir === 'sys' ? 'log-dir sys' : r.l.dir === 'mark' ? 'log-dir mark' : 'log-dir rx'}>{dirLabel(r.l.dir || 'rx')}</span>
+        <span class={logTextClass(r)}>{lineHex(r.l)}</span>
+        {#if r.l.err && r.l.err.length}
+        <span class="log-err-tag" title={() => r.l.err[0].hint || ''}>{r.l.err[0].code} · {r.l.err[0].meaning}</span>
+        {/if}
+      </div>
+      {/each}
+    </div>
+      {#if bulkOpen()}
+  <div class="bulk-panel" id="bulkPanel">
+        <div class="bulk-head">
+          <span class="nav-ico" data-icon="list-checks"></span>
+          <b>批量发送</b>
+          <span class="hint"># 开头为注释；WAIT 3 表示等待 3 秒（可直接回放导出的 .at.txt 脚本）</span>
+        </div>
+        <textarea id="bulkText" rows="6" spellcheck="false" bind:value={bulkText}
+          placeholder="AT&#10;AT+CGMR?&#10;# 注释行会跳过&#10;WAIT 2&#10;AT+CS"></textarea>
+        <div class="bulk-opts">
+          <label>行间隔 <input type="number" id="bulkDelay" value="300" min="0" step="50" class="mini-input" bind:value={bulkDelay}> ms</label>
+          <label class="switch"><input type="checkbox" id="bulkStopErr" checked bind:checked={bulkStopErr}><span>失败即停</span></label>
+          <button class="ghost-btn" id="btnBulkRun" disabled={busy()} on:click={bulkRun}><span data-icon="play"></span>开始发送</button>
+          <button class="ghost-btn danger" id="btnBulkStop" disabled={!bulkRunning()} on:click={stopBulk}><span data-icon="square"></span>停止</button>
+        </div>
+        {#if bulkRunning() || bulkProgText()}
+        <div class="bulk-prog" id="bulkProg">
+          <div class="progress-track"><div class="progress-fill" id="bulkFill" style="width:{bulkTotal() ? Math.round(bulkDone()/bulkTotal()*100) : 0}%"></div></div>
+          <span class="hint mono" id="bulkProgText">{bulkProgText()}</span>
+        </div>
+        {/if}
+      </div>
+      {/if}
+      <div class="send-bar">
+        <select id="sendMode" class="mini-select" bind:value={sendMode}>
+          <option value="text">文本</option>
+          <option value="hex">HEX</option>
+        </select>
+        <label class="switch" id="appendCrlfWrap" title="勾选后文本发送会自动追加 CRLF（AT 指令一般需要），取消则裸发">
+          <input type="checkbox" id="chkAppendCRLF" checked={ui().append_crlf !== false} on:change={(e) => { const v = (e.target as HTMLInputElement).checked; void saveUi({ append_crlf: v }); }}>
+          <span>加回车换行</span>
+        </label>
+        <div class="send-input-wrap">
+          <textarea id="cmdInput" rows="1" placeholder="输入 AT 指令，Ctrl+Enter 发送（↑↓ 历史 / AT+ 自动补全）" value={cmdText()} on:input={onCmdInput} on:keydown={onCmdKey}></textarea>
+          {#if acOpen()}
+        <div class="ac-box" id="acBox">
+          {#each acItems() as it, i (it.id)}
+          <div class="ac-item " class:on={acIdx()===i} data-i={i} title={() => it.desc || it.summary || ''} on:click={() => acPick(i)}>
+            <b>{it.id}</b><span>{it.summary || ''}</span>
+          </div>
+          {/each}
+        </div>
+        {/if}
+        </div>
+        <button class="ghost-btn " class:pin-on={isFav(cmdText())} id="btnFavAdd" on:click={toggleFav}>
+          <span data-icon="star"></span></button>
+        <button class="ghost-btn" id="btnFavList" on:click={openFavList}>
+          <span data-icon="bookmark"></span></button>
+        <button class="primary-btn" id="btnSend" disabled={busy()} on:click={sendFromBar}>发送</button>
+      </div>
+      <div class="hint-row">
+        <span>提示：模组回显已自动过滤；发送 HEX 时直接写十六进制串。响应命中错误码时会自动标红并提示原因。</span>
+      </div>
+    
+  <Dialog dialogKey="terminal" open={() => dlg().open && dlg().id === 'loop'} title={() => '循环发送'} onClose={closeDlg}>
+    <div class="field"><label>发送内容</label><input class="inp" id="lsCmd" placeholder="AT+CSQ 或 HEX：01 03 00 00" bind:value={lsCmd}></div>
+    <div class="field"><label>格式</label><select class="inp" id="lsMode" bind:value={lsMode}><option value="text">文本（自动加行结束符）</option><option value="hex">HEX（原始字节）</option></select></div>
+    <div class="field"><label>间隔（毫秒，最小 50）</label><input class="inp" id="lsInt" type="number" min="50" bind:value={lsInt}></div>
+    <div class="field"><label>重复次数（0 = 无限循环）</label><input class="inp" id="lsRep" type="number" min="0" bind:value={lsRep}></div>
+    <button class="ghost-btn" slot="foot" on:click={closeDlg}>取消</button>
+    <button class="primary-btn" slot="foot" on:click={startLoop}>开始</button>
+  </Dialog>
+  <Dialog dialogKey="terminal" open={() => dlg().open && dlg().id === 'loopStop'} title={() => '循环发送'} onClose={closeDlg}>
+    <p>循环发送进行中，已发送 <b>{(s().loopSend && s().loopSend.count) || 0}</b> 次。</p>
+    <button class="ghost-btn" slot="foot" on:click={closeDlg}>关闭</button>
+    <button class="danger-btn" slot="foot" on:click={stopLoop}>停止发送</button>
+  </Dialog>
+  <Dialog dialogKey="terminal" open={() => dlg().open && dlg().id === 'autoReply'} title={() => '自动应答'} onClose={closeDlg}>
+    <div class="field"><label>触发关键字（留空 = 关闭）</label><input class="inp" id="arKw" placeholder="例如：Incoming data" bind:value={arKw}></div>
+    <div class="field"><label>回复内容</label><input class="inp" id="arRep" placeholder="AT+CSQ 或 HEX：4F 4B" bind:value={arRep}></div>
+    <div class="field"><label>回复格式</label><select class="inp" id="arMode" bind:value={arMode}><option value="text">文本（自动加行结束符）</option><option value="hex">HEX（原始字节）</option></select></div>
+    <div class="field"><label>延时（毫秒）</label><input class="inp" id="arDelay" type="number" min="0" bind:value={arDelay}></div>
+    <button class="ghost-btn" slot="foot" on:click={closeDlg}>取消</button>
+    <button class="primary-btn" slot="foot" on:click={() => saveAutoReply(false)}>保存/启用</button>
+    <button class="danger-btn" slot="foot" on:click={() => saveAutoReply(true)}>关闭应答</button>
+  </Dialog>
+  <Dialog dialogKey="terminal" open={() => dlg().open && dlg().id === 'macro'} title={() => '宏录制完成'} onClose={closeDlg}>
+    <div class="field"><label>已录制 {macro().length} 条指令</label><textarea class="inp" id="mcCmds" rows="6" bind:value={mcCmds}></textarea></div>
+    <div class="field"><label>按钮名称</label><input class="inp" id="mcName" bind:value={mcName}></div>
+    <div class="field"><label>分组</label><input class="inp" id="mcGroup" bind:value={mcGroup}></div>
+    <button class="danger-btn" slot="foot" on:click={closeDlg}>丢弃</button>
+    <button class="primary-btn" slot="foot" on:click={saveMacro}>保存为按钮</button>
+  </Dialog>
+  <Dialog dialogKey="terminal" open={() => dlg().open && dlg().id === 'mark'} title={() => '添加标记'} onClose={closeDlg}>
+    <div class="field"><label>标记说明</label><input class="inp" id="bmNote" placeholder="例如：开始发送配置" bind:value={markNote}></div>
+    <button class="ghost-btn" slot="foot" on:click={closeDlg}>取消</button>
+    <button class="primary-btn" slot="foot" on:click={addMark}>插入</button>
+  </Dialog>
+  <Dialog dialogKey="terminal" open={() => dlg().open && dlg().id === 'fav'} title={() => '指令收藏夹'} onClose={closeDlg}>
+    <div class="fav-list">
+      {#each favList() as fv, i (fv.text + ':' + i)}
+      <div class="fav-row"><span class="fav-use" on:click={() => favUse(String(fv.text || ''))}>{fv.text}</span>
+        <button on:click={() => favMove(i, -1)}>↑</button><button on:click={() => favMove(i, 1)}>↓</button>
+        <button on:click={() => favDel(i)}>删除</button></div>
+      {/each}
+      {#if !favList().length}<div class="dock-empty">还没有收藏指令</div>{/if}
+    </div>
+    <button class="ghost-btn" slot="foot" on:click={closeDlg}>关闭</button>
+  </Dialog>
+  <Dialog dialogKey="terminal" open={() => dlg().open && dlg().id === 'sessions'} title={() => '会话日志文件'} onClose={closeDlg}>
+    <div class="session-list">
+      {#each sessions() as ss (ss.name)}
+      <div class="session-row" data-name={ss.name}>
+        <span>{ss.name} · {ss.count || 0} 行 · {ss.port || ''}</span>
+        <button on:click={() => viewSession(ss.name)}>查看</button>
+        <button on:click={() => exportSession(ss.name)}>导出</button>
+        <button on:click={() => deleteSession(ss.name)}>删除</button>
+      </div>
+      {/each}
+      {#if !sessions().length}<div class="dock-empty">暂无会话日志</div>{/if}
+    </div>
+    <button class="ghost-btn" slot="foot" on:click={openSessions}>刷新</button>
+    <button class="ghost-btn" slot="foot" on:click={closeDlg}>关闭</button>
+  </Dialog>
+</section>

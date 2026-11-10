@@ -1,0 +1,1155 @@
+<script>
+  // index.rose - the rosezm-native shell of the 1:1 AT Command Debugger port.
+  // Global state, boot, the cursor-based poll loop, chrome (titlebar/nav/
+  // statusbar/dock/toasts/shortcuts), theme/brand application, lucide icons.
+  // Views are always mounted (visibility via .page.active) so per-view state
+  // survives tab switches exactly like the original single-page app.js.
+  import DashboardView from '../components/DashboardView.rose';
+  import PresetsView from '../components/PresetsView.rose';
+  import CommandsView from '../components/CommandsView.rose';
+  import ButtonsView from '../components/ButtonsView.rose';
+  import SuitesView from '../components/SuitesView.rose';
+  import TerminalView from '../components/TerminalView.rose';
+  import LogsView from '../components/LogsView.rose';
+  import ErrCodesView from '../components/ErrCodesView.rose';
+  import SettingsView from '../components/SettingsView.rose';
+  import AboutView from '../components/AboutView.rose';
+
+  const BAUDS = [9600, 115200, 57600, 38400, 19200, 4800, 2400, 1200, 500000, 1000000];
+
+  // 每个高频字段一个叶子信号：set/patch 按字段分发写入，只有真正读它的
+  // 节点重渲染。之前 S 是一个对象、每次写入整体换引用，连一次 toast、
+  // 一条日志、一次切页都会让所有 10 个视图 + 顶栏整棵重建
+  // （连接发一条 AT 顶栏闪几次、切一次侧栏全页闪一次的根源）。
+  let sBoot = $state<any>(null);
+  let sConfig = $state<any>(null);
+  let sPage = $state('dashboard');
+  let sStatus = $state<any>(null);
+  let sProgress = $state<any>(null);
+  let sRunning = $state(false);
+  let sBusy = $state(false);
+  let sLoopSend = $state<any>({ running: false });
+  let sLogs = $state<any>([]);
+  let sHistory = $state<any>([]);
+  let sPorts = $state<any>([]);
+  let sPollSeq = $state<any>(null);
+  let sFocus = $state<any>({ view: '', id: '' });
+  let sSplashPhase = $state(0);
+  let sByteRates = $state<any>({ up: 0, down: 0 });
+  let sLastResult = $state<any>(null);
+  let sBaselineDiff = $state<any>(null);
+  let sPreset = $state<any>(null);
+  let sPresetParams = $state<any>({});
+  let sBusyExtra = $state(false);
+  let winMaximized = $state(false);
+  let sLogFilter = $state<any>({ type: 'all', kw: '', hex: false });
+  let sLogFilter2 = $state<any>({ type: 'all', kw: '' });
+  let sLastPage = $state('');
+  let sPolling = $state(false);
+
+  // 兼容视图：getS() 返回的对象每个字段读对应叶子，组件 s().logs 这类
+  // 读取自动只订阅 logs 叶子。对象壳本身不是信号，替换它不触发任何渲染。
+  function getS(): any {
+    return {
+      get boot() { return sBoot(); },
+      get config() { return sConfig(); },
+      get page() { return sPage(); },
+      get status() { return sStatus(); },
+      get progress() { return sProgress(); },
+      get running() { return sRunning(); },
+      get busy() { return sBusy(); },
+      get loopSend() { return sLoopSend(); },
+      get logs() { return sLogs(); },
+      get history() { return sHistory(); },
+      get ports() { return sPorts(); },
+      get pollSeq() { return sPollSeq(); },
+      get focus() { return sFocus(); },
+      get splashPhase() { return sSplashPhase(); },
+      get byteRates() { return sByteRates(); },
+      get byteSamp() { return byteSamp; },
+      get lastResult() { return sLastResult(); },
+      get baselineDiff() { return sBaselineDiff(); },
+      get preset() { return sPreset(); },
+      get presetParams() { return sPresetParams(); },
+      get busyExtra() { return sBusyExtra(); },
+      get logFilter() { return sLogFilter(); },
+      get logFilter2() { return sLogFilter2(); },
+      get lastPage() { return sLastPage(); },
+      get polling() { return sPolling(); },
+    };
+  }
+
+  // set/patch 的字段 → 叶子写入口。
+  const LEAF_SETTERS: Record<string, (v: any) => void> = {
+    boot: (v) => $setState('sBoot', v),
+    config: (v) => $setState('sConfig', v),
+    page: (v) => $setState('sPage', v),
+    status: (v) => $setState('sStatus', v),
+    progress: (v) => $setState('sProgress', v),
+    running: (v) => $setState('sRunning', v),
+    busy: (v) => $setState('sBusy', v),
+    loopSend: (v) => $setState('sLoopSend', v),
+    logs: (v) => $setState('sLogs', v),
+    history: (v) => $setState('sHistory', v),
+    ports: (v) => $setState('sPorts', v),
+    pollSeq: (v) => $setState('sPollSeq', v),
+    focus: (v) => $setState('sFocus', v),
+    splashPhase: (v) => $setState('sSplashPhase', v),
+    byteRates: (v) => $setState('sByteRates', v),
+    lastResult: (v) => $setState('sLastResult', v),
+    baselineDiff: (v) => $setState('sBaselineDiff', v),
+    preset: (v) => $setState('sPreset', v),
+    presetParams: (v) => $setState('sPresetParams', v),
+    busyExtra: (v) => $setState('sBusyExtra', v),
+    logFilter: (v) => $setState('sLogFilter', v),
+    logFilter2: (v) => $setState('sLogFilter2', v),
+    lastPage: (v) => $setState('sLastPage', v),
+    polling: (v) => $setState('sPolling', v),
+  };
+
+  // 兼容壳里 S() 的少量直接调用（S 本体已不是信号，S() 返回兼容视图）。
+  function S(): any { return getS(); }
+
+  let dockOpenState = $state(false);
+  let shortcutsOpenState = $state(false);
+  let profileSel = $state('');
+  let portSel = $state('');
+  let baudSel = $state('');
+
+  // 字节速率采样基准：普通变量（不进响应式状态），避免每秒刷 S 触发整树重渲染。
+  let byteSamp: { t: number; in: number; out: number } = { t: 0, in: 0, out: 0 };
+
+  // 轮询去重：只有字段真正变化才写状态（浅 JSON 比较，字段都很小）。
+  function sameJson(a: any, b: any): boolean {
+    try { return JSON.stringify(a) === JSON.stringify(b); } catch (e) { return a === b; }
+  }
+
+  function set(k: string, v: unknown) {
+    let value: any = v;
+    if (k === 'boot' && v) {
+      // Original renderDashboard() re-derived these counters after every CRUD.
+      // CRUDDING a command/preset/suite/button patches S.boot; keep the
+      // dashboard statistics in sync with the patched payload here.
+      const b: any = v;
+      value = {
+        ...b,
+        command_count: b.command_count !== undefined && Array.isArray(b.commands) ? b.commands.length : b.command_count,
+        case_count: Array.isArray(b.suites)
+          ? b.suites.reduce((n: number, x: any) => n + (((x && x.cases) || []).length), 0)
+          : b.case_count,
+        buttons: Array.isArray(b.buttons) ? b.buttons : b.buttons,
+      };
+    }
+    const write = LEAF_SETTERS[k];
+    if (!write) { console.warn('[shell] unknown state key: ' + k); return; }
+    write(value);
+    if (k === 'logs') scheduleLogScroll();
+  }
+  // The original pushLogs -> scrollTerm ran where the logs state lived; in the
+  // ported architecture children cannot $effect on props (props are plain
+  // snapshots), so the shell owns every cross-view reaction - including scroll.
+  function scheduleLogScroll() {
+    setTimeout(() => {
+      try {
+        const ui = (S().config && S().config.ui) || {};
+        if (ui.auto_scroll === false) return;
+        const term = document.getElementById('terminal');
+        if (term) term.scrollTop = term.scrollHeight;
+        if (S().page === 'logs') {
+          const lf = S().logFilter2 || {};
+          const all = document.getElementById('logAll');
+          if (all && !lf.kw && (!lf.type || lf.type === 'all')) all.scrollTop = all.scrollHeight;
+        }
+      } catch (e) { /* noop */ }
+    }, 0);
+  }
+  function patch(o: Record<string, unknown>) {
+    for (const k in o) {
+      const write = LEAF_SETTERS[k];
+      if (write) write((o as any)[k]);
+      else console.warn('[shell] unknown patch key: ' + k);
+    }
+  }
+  function boot() { return S().boot; }
+  function page() { return S().page; }
+
+  // rosezm_PUBLIC_* is the framework's client-visible env (AGENTS §109-137):
+  // in `rosezm dev` it points at the Python backend cross-origin (the original
+  // start_http_server sets Access-Control-Allow-Origin:* and answers OPTIONS);
+  // empty (or absent) = same-origin relative path for production, where the
+  // Python server hosts dist/ and the API on one origin.
+  const API_BASE = (import.meta as any).env?.rosezm_PUBLIC_API_BASE || '';
+
+  async function call(method: string, args?: Record<string, unknown>) {
+    try {
+      const r = await fetch(API_BASE + '/api/call', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ method, args: args || {} }),
+      });
+      return await r.json();
+    } catch (e) {
+      return { ok: false, error: '后端通信失败：' + e };
+    }
+  }
+
+  let toastSeq = 0;
+  let toastItems = $state<any>([]);   // 叶子信号：toast 增删只重渲染 toast 容器，
+  function toasts() { return toastItems(); }  // 不再因 S 整体替换抖动全页
+  function toast(msg: string, type = '', ms?: number) {
+    const life = ms || (type === 'err' ? 4200 : 2600);
+    const id = ++toastSeq;
+    $setState('toastItems', [...toastItems(), { id, msg, type, life }]);
+    setTimeout(() => { $setState('toastItems', toastItems().filter((t: any) => t.id !== id)); }, life + 300);
+  }
+
+  function goto(name: string) {
+    if (S().page !== name) {
+      patch({ page: name });
+      try { history.replaceState(null, '', '#' + name); } catch (e) { /* noop */ }
+    }
+    if (name === 'logs') {
+      setTimeout(() => {
+        try {
+          const ui = (S().config && S().config.ui) || {};
+          if (ui.auto_scroll !== false) {
+            const all = document.getElementById('logAll');
+            if (all) all.scrollTop = all.scrollHeight;
+          }
+        } catch (e) { /* noop */ }
+      }, 60);
+    }
+    if (S().lastPage !== name) {
+      set('lastPage', name);
+      void call('save_config', { patch: { ui: { last_page: name } } }).then((r: any) => {
+        if (r && r.config) set('config', r.config);
+      });
+    }
+  }
+
+  // ---- derived chrome state ----
+  function status() { return S().status || (S().boot && S().boot.status) || null; }
+  function isConnected() { const st = status(); return !!(st && st.connected); }
+  function connText() { const st = status(); return isConnected() ? String(st.port || '') : '未连接'; }
+  function showProfilePick() {
+    const b = S().boot;
+    return !!(b && b.show_profile_picker !== false && b.profiles);
+  }
+  function profileOptions() { const b = S().boot; return (b && b.profiles) || []; }
+  function portOptions() { return S().ports || (S().boot && S().boot.ports) || []; }
+  function pinOn(kind: string) { const st = status(); return !!(st && st.pins && st.pins[kind]); }
+  function sbPort() { const st = status(); return isConnected() ? String(st.port || '') : '未连接'; }
+  function sbBaud() { const st = status(); return String((st && st.baudrate) || (S().config && S().config.serial && S().config.serial.baudrate) || 9600); }
+  let uptimeLeaf = $state('');
+  function uptimeText() { return uptimeLeaf(); }
+  function fmtSize(n: number) { return n >= 1048576 ? (n / 1048576).toFixed(1) + 'MB' : n >= 1024 ? (n / 1024).toFixed(1) + 'KB' : String(n); }
+  function fmtRate(n: number) { return n >= 1048576 ? (n / 1048576).toFixed(1) + 'MB/s' : n >= 1024 ? (n / 1024).toFixed(1) + 'KB/s' : n + 'B/s'; }
+  function bytesText() {
+    const st = status() || {};
+    let s = '↑' + fmtSize(Number(st.bytes_out || 0)) + ' ↓' + fmtSize(Number(st.bytes_in || 0)) + ' B';
+    const r = S().byteRates;
+    if (r && (r.up || r.down)) s += ' ↓' + fmtRate(r.down) + ' ↑' + fmtRate(r.up);
+    return s;
+  }
+  function serialLogs() { return S().logs.filter((l: any) => l.dir === 'tx' || l.dir === 'rx'); }
+  function dockLogs() { return serialLogs().slice(-200); }
+  function dockTs(): boolean {
+    return !((S().config && S().config.ui && S().config.ui.timestamps) === false);
+  }
+  function dockLatest() { const l = dockLogs(); return l.length ? String(l[l.length - 1].text || '') : '暂无串口日志'; }
+  function loopBannerOn() { const l = S().loopSend; return !!(l && l.running); }
+  function dockOpen() { return dockOpenState(); }
+  function shortcutsOpen() { return shortcutsOpenState(); }
+  function splashPhase() { return S().splashPhase; }
+
+  function fmtTs(ts: number) {
+    const d = new Date((ts || Date.now() / 1000) * 1000);
+    const p = (n: number) => String(n).padStart(2, '0');
+    return p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds()) + '.' + String(d.getMilliseconds()).padStart(3, '0');
+  }
+  function dirLabel(dir: string) { return dir === 'tx' ? 'TX' : dir === 'sys' ? 'SYS' : dir === 'mark' ? 'MARK' : 'RX'; }
+  function lineClass(l: any) {
+    if (!l) return '';
+    const t = String(l.text || '');
+    if (/^AT_ERROR|^AT_PARAM_ERROR|^AT_BUSY_ERROR|^AT_NO_NET|^AT_RX_ERROR|^AT_DUTY|^AT_CRYPTO/.test(t)) return 'err';
+    if (t === 'OK') return 'ok';
+    if (t.indexOf('+EVT') === 0) return 'evt';
+    if (l.sim) return 'sim';
+    return '';
+  }
+  function lineHex(l: any) {
+    const hexView = !!(S().config && S().config.ui && S().config.ui.hex_view);
+    return hexView && l && l.hex ? l.hex : (l && l.text) || '';
+  }
+  function copyLine(l: any) {
+    const text = String((l && l.text) || '');
+    try { navigator.clipboard.writeText(text); } catch (e) {
+      const ta = document.createElement('textarea');
+      ta.value = text; document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy'); } catch (e2) { /* noop */ }
+      ta.remove();
+    }
+    toast('已复制：' + text.slice(0, 40));
+  }
+
+  // ---- poll loop (the original's cursor-based channel) ----
+  function pushLogs(events: any[]) {
+    let logs = S().logs.slice();
+    let firstErr: any = null;
+    for (const ev of events) {
+      logs.push(ev);
+      if (!firstErr && ev.err && ev.err.length) firstErr = ev;
+    }
+    const max = (S().config && S().config.ui && S().config.ui.max_log_lines) || 2000;
+    if (logs.length > max) logs = logs.slice(-max);
+    set('logs', logs);
+    if (firstErr) {
+      const e = firstErr.err[0];
+      toast('「' + e.code + '」' + (e.meaning || '') + '（' + firstErr.text + '）', e.severity === 'warn' ? 'warn' : 'err');
+    }
+  }
+
+  async function pollTick() {
+    const t0 = Date.now();
+    const d: any = await call('poll', S().pollSeq == null ? {} : { last_seq: S().pollSeq });
+    const cost = Date.now() - t0;
+    let delay = 400;
+    if (d && typeof d === 'object' && !d.error) {
+      const cur = S();
+      const changes: any = {};
+      if (typeof d.seq === 'number' && d.seq !== cur.pollSeq) changes.pollSeq = d.seq;
+      if (Array.isArray(d.events) && d.events.length) pushLogs(d.events);
+      if (d.js && d.js.length) runJsTasks(d.js);
+      const st = d.status || {};
+      // byte-rate sampling (>=1s window), like the original byteSamp.
+      // 采样基准放在普通变量里（不进响应式状态），避免每秒都换 S 对象触发重渲染。
+      const now = Date.now();
+      if (now - byteSamp.t >= 1000) {
+        const up = Math.max(0, Number(st.bytes_out || 0) - byteSamp.out);
+        const down = Math.max(0, Number(st.bytes_in || 0) - byteSamp.in);
+        byteSamp = { t: now, in: Number(st.bytes_in || 0), out: Number(st.bytes_out || 0) };
+        if (cur.byteRates.up !== up || cur.byteRates.down !== down) {
+          changes.byteRates = { up, down };
+        }
+      } else if (!byteSamp.t) {
+        byteSamp = { t: now, in: Number(st.bytes_in || 0), out: Number(st.bytes_out || 0) };
+      }
+      let uptime = '';
+      if (st.connected && st.connected_at) {
+        const secs = Math.max(0, Math.floor(Date.now() / 1000 - Number(st.connected_at)));
+        const h = Math.floor(secs / 3600), m = Math.floor((secs % 3600) / 60), ss = secs % 60;
+        uptime = '⏱ ' + (h ? h + ':' + String(m).padStart(2, '0') : String(m)) + ':' + String(ss).padStart(2, '0');
+      }
+      if (Array.isArray(d.ports) && d.ports.changed) {
+        changes.ports = d.ports.list || [];
+        for (const p of (d.ports.added || [])) toast('检测到新串口：' + p, 'ok');
+        for (const p of (d.ports.removed || [])) toast('串口 ' + p + ' 已拔出', 'err');
+      }
+      // 只在值真正变化时写状态：否则每 400ms 换一次 S 对象会让所有视图整棵重渲染
+      // （表现为界面一直在跳/刷新，滚动位置被反复重置）。
+      if (!sameJson(cur.status, st)) changes.status = st;
+      if (!sameJson(cur.progress, d.progress)) changes.progress = d.progress;
+      if (cur.running !== !!d.running) changes.running = !!d.running;
+      if (cur.busy !== !!d.busy) changes.busy = !!d.busy;
+      const loopSend = d.loop_send || { running: false };
+      if (!sameJson(cur.loopSend, loopSend)) changes.loopSend = loopSend;
+      if (uptimeLeaf() !== uptime) $setState('uptimeLeaf', uptime);
+      if (Object.keys(changes).length) patch(changes);
+      const busyNow = !!(st.connected || d.running || (d.progress && d.progress.active && !d.progress.finished));
+      if (busyNow) {
+        const dyn = Math.min(600, Math.max(80, Math.round(cost * 2)));
+        delay = Math.max(80, 120 - dyn);
+      } else {
+        delay = 400;
+      }
+    }
+    if (S().polling) setTimeout(() => { void pollTick(); }, delay);
+  }
+
+  function startPoll() {
+    if (S().polling) return;
+    set('polling', true);
+    void pollTick();
+  }
+
+  function runJsTasks(tasks: any[]) {
+    for (const t of tasks) {
+      let v: unknown = null; let e = '';
+      try { v = (0, eval)(t.script); } catch (err) { e = String(err); }
+      void call('report_js', { tag: t.tag, value: v, error: e });
+    }
+  }
+
+  // ---- boot ----
+  function pickInitialPage(cfg: any, data: any): string {
+    try {
+      const hash = location.hash.slice(1);
+      if (hash && document.getElementById('page-' + hash)) return hash;
+    } catch (e) { /* noop */ }
+    const last = cfg && cfg.ui && cfg.ui.last_page;
+    if (last && last !== 'home' && document.getElementById('page-' + last)) return last;
+    return 'dashboard';
+  }
+
+  async function bootApp() {
+    const data: any = await call('get_boot');
+    if (!data || !data.config) { toast('后端数据获取失败，界面内容可能不完整', 'err'); return; }
+    const cfg = data.config;
+    patch({
+      boot: data, config: cfg,
+      history: data.history || [], ports: data.ports || [],
+      status: data.status || null,
+      page: pickInitialPage(cfg, data),
+      lastPage: (cfg.ui && cfg.ui.last_page) || '',
+    });
+    byteSamp = { t: 0, in: 0, out: 0 };
+    $setState('profileSel', String(data.profile_id || ''));
+    $setState('portSel', String((cfg.serial && cfg.serial.port) || ''));
+    $setState('baudSel', String((cfg.serial && cfg.serial.baudrate) || 9600));
+    if (data.instance) toast('已开启独立实例「' + data.instance + '」（数据目录相互隔离）', '', 9000);
+    startPoll();
+    // splash: same rhythm as the original (620ms hide class, +520ms gone)
+    setTimeout(() => set('splashPhase', 1), 620);
+    setTimeout(() => set('splashPhase', 2), 1140);
+  }
+
+  // ---- theme / brand / body classes ----
+  function applyCustomAccent(hex: string) {
+    const el = document.documentElement;
+    if (!/^#[0-9a-fA-F]{6}$/.test(hex)) {
+      el.style.removeProperty('--accent'); el.style.removeProperty('--accent-2'); el.style.removeProperty('--accent-soft');
+      return;
+    }
+    const r = parseInt(hex.slice(1, 3), 16), g = parseInt(hex.slice(3, 5), 16), b = parseInt(hex.slice(5, 7), 16);
+    const mix = (c: number) => Math.round(c + (255 - c) * 0.35);
+    el.style.setProperty('--accent', hex);
+    el.style.setProperty('--accent-2', 'rgb(' + mix(r) + ',' + mix(g) + ',' + mix(b) + ')');
+    el.style.setProperty('--accent-soft', 'rgba(' + r + ',' + g + ',' + b + ',0.16)');
+  }
+  function applyTheme(c: any) {
+    const ui = (c && c.ui) || {};
+    const el = document.documentElement;
+    let theme = ui.theme || 'dark';
+    if (theme === 'auto') {
+      try { theme = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'; } catch (e) { theme = 'dark'; }
+    }
+    el.dataset.theme = theme;
+    el.dataset.accent = ui.accent || 'blue';
+    applyCustomAccent(String(ui.accent_custom || ''));
+    if (ui.font_size) el.style.setProperty('--fs', String(ui.font_size) + 'px');
+    try {
+      const z = Number(ui.ui_scale || 1);
+      document.body.style.zoom = (z && z !== 1 && z >= 0.7 && z <= 1.5) ? String(z) : '';
+    } catch (e) { /* noop */ }
+    el.dataset.anim = ui.animation === false ? 'off' : 'on';
+  }
+  function applyBrand() {
+    const b = S().boot; if (!b) return;
+    const brand = b.brand || b.app || 'AT指令调试台';
+    document.title = brand;
+    document.documentElement.lang = 'zh-CN';
+    syncWebClass();
+  }
+
+  // ---- serial bar actions ----
+  function onBaudChange() {
+    const v = String(baudSel() || '').trim();
+    const n = Number(v);
+    if (!/^\d+$/.test(v) || Number.isNaN(n) || n < 110 || n > 6000000) {
+      toast('波特率需为 110~6000000 的数字，已还原', 'warn');
+      $setState('baudSel', String((S().config && S().config.serial && S().config.serial.baudrate) || 9600));
+    }
+  }
+  async function doConnect() {
+    const port = String(portSel() || '').trim();
+    if (!port) { toast('请先选择串口', 'warn'); return; }
+    onBaudChange();
+    const baud = Number(baudSel()) || 9600;
+    const r: any = await call('connect', { port, baudrate: baud });
+    if (r && r.ok) {
+      toast('已连接 ' + (r.port || port), 'ok');
+      const c: any = await call('save_config', { patch: { serial: { port: r.port || port, baudrate: baud } } });
+      if (c && c.config) set('config', c.config);
+    } else {
+      toast('连接失败：' + ((r && r.error) || '未知错误'), 'err');
+    }
+  }
+  async function doDisconnect() {
+    await call('disconnect');
+    toast('已断开');
+  }
+  async function refreshPorts() {
+    const list: any = await call('list_ports');
+    if (Array.isArray(list)) { set('ports', list); toast('串口列表已刷新', 'ok'); }
+  }
+  async function toggleDtr() {
+    const next = !pinOn('dtr');
+    const r: any = await call('set_dtr', { state: next });
+    if (r && r.ok) toast('DTR → ' + (next ? '高' : '低'), 'ok');
+    else toast((r && r.error) || '设置 DTR 失败', 'err');
+  }
+  async function toggleRts() {
+    const next = !pinOn('rts');
+    const r: any = await call('set_rts', { state: next });
+    if (r && r.ok) toast('RTS → ' + (next ? '高' : '低'), 'ok');
+    else toast((r && r.error) || '设置 RTS 失败', 'err');
+  }
+  async function resetCounters() {
+    await call('reset_counters');
+    set('byteRates', { up: 0, down: 0 });
+    byteSamp = { t: Date.now(), in: 0, out: 0 };
+    toast('收发计数已清零');
+  }
+  async function stopLoopFromBanner() {
+    await call('stop_loop_send');
+    toast('循环发送已停止');
+  }
+  function toggleDock() { $setState('dockOpenState', !dockOpenState()); }
+  function clearLogs() { set('logs', []); }
+  async function dockExport() {
+    const r: any = await call('export_logs', { logs: dockLogs() });
+    if (r && r.ok) { toast('已导出：' + r.path, 'ok'); void call('open_path', { path: r.path }); }
+    else toast((r && r.error) || '导出失败', 'err');
+  }
+
+
+  function onProfileChange(e: Event) {
+    const el = e.target as HTMLSelectElement;
+    $setState('profileSel', el.value);
+    void switchToProfile(el.value);
+  }
+  function onPortChange(e: Event) {
+    const el = e.target as HTMLSelectElement;
+    $setState('portSel', el.value);
+  }
+  // ---- titlebar window controls (original app.js bindAll / bindTitlebarDrag) ----
+  function inApp(): boolean {
+    try { const w: any = window as any; return !!(w.pywebview && w.pywebview.api); } catch (e) { return false; }
+  }
+  // 原版：document.documentElement.classList.toggle('is-web', !desktop)，即只有
+  // 浏览器模式才加 is-web；桌面(pywebview)模式不能加，否则会隐藏 titlebar 的
+  // 窗口按钮、把窗口拖动区光标改成 default。桥可能晚于 onMount 注入，故多时机同步。
+  function syncWebClass(): void {
+    try {
+      const el = document.documentElement;
+      el.classList.toggle('is-web', !inApp());
+      // macOS 交通灯按钮靠左、顺序反转（关闭/最大化/最小化在最左），
+      // 帮助/置顶留在右侧。框架的 scoped 样式引擎对跨层选择器
+      // （html.is-mac #btnX { order: n }）匹配但不参与布局，
+      // 所以这里直接物理重排 DOM 节点——不依赖任何 CSS。
+      const plat = String((S().boot && S().boot.python_platform) || '');
+      const isMac = plat === 'darwin' || /Mac|iPhone|iPad/.test(navigator.userAgent || '');
+      el.classList.toggle('is-mac', isMac);
+      // 分组定位写成 inline style：框架的 scoped 样式引擎对跨层选择器
+      // （html.is-mac #btnX）匹配但不参与布局，CSS 里的 order/absolute
+      // 都不生效；inline style 是唯一稳定路径（实测通过）。
+      const actions = document.getElementById('titlebarActions');
+      if (isMac && actions) {
+        actions.style.flexDirection = 'row-reverse';
+      }
+    } catch (e) { /* noop */ }
+  }
+  async function winMin() { if (inApp()) { await call('window_system_command', { command: 'minimize' }); } }
+  async function winMax() {
+    const r: any = await call('toggle_maximize');
+    if (r && r.ok) $setState('winMaximized', !!r.maximized);
+  }
+  async function winClose() { await call('close_window'); }
+  async function winPin() {
+    if (!inApp()) return;
+    const cur = !!(S().config && S().config.window && S().config.window.topmost);
+    const r: any = await call('set_topmost', { on: !cur });
+    if (r && r.ok) {
+      const cfg = { ...(S().config || {}) };
+      cfg.window = { ...(cfg.window || {}), topmost: !!r.topmost };
+      set('config', cfg);
+      toast(r.topmost ? '窗口已置顶' : '已取消置顶', 'ok');
+    }
+  }
+  function winHelp() { $setState('shortcutsOpenState', true); }
+  function winTopmost(): boolean {
+    return !!(S().config && S().config.window && S().config.window.topmost);
+  }
+  let jsDrag: any = null;
+  function onTitlebarDown(e: MouseEvent) {
+    const t: any = e.target as HTMLElement;
+    if (e.button !== 0 || (t && t.closest && t.closest('select, input, button, .serial-bar, .profile-picker, .no-drag'))) return;
+    if (!inApp()) return; // browser mode: no native drag (original jsDragWindow fallback is pywebview-only)
+    e.preventDefault();
+    const plat = String((S().boot && S().boot.python_platform) || '');
+    if (plat === 'win32') {
+      // Windows：后端用 Win32 原生拖动循环（更稳、无抖动）
+      void call('start_window_drag');
+      return;
+    }
+    // macOS/Linux：pywebview 的 winnative 不可用，改由 JS 按屏幕坐标增量移动窗口。
+    void startJsDrag(e);
+  }
+  async function startJsDrag(e: MouseEvent) {
+    try {
+      const rect: any = await call('get_window_rect');
+      if (!rect || !rect.ok) return;
+      jsDrag = {
+        startX: e.screenX, startY: e.screenY,
+        winX: Number(rect.x), winY: Number(rect.y),
+        lastX: Number(rect.x), lastY: Number(rect.y), raf: 0, pending: false,
+      };
+      window.addEventListener('mousemove', onJsDragMove, true);
+      window.addEventListener('mouseup', endJsDrag, true);
+    } catch (err) { /* noop */ }
+  }
+  function onJsDragMove(e: MouseEvent) {
+    if (!jsDrag) return;
+    const nx = jsDrag.winX + (e.screenX - jsDrag.startX);
+    const ny = jsDrag.winY + (e.screenY - jsDrag.startY);
+    jsDrag.lastX = nx; jsDrag.lastY = ny;
+    if (jsDrag.pending) return;
+    jsDrag.pending = true;
+    jsDrag.raf = requestAnimationFrame(() => {
+      if (!jsDrag) return;
+      jsDrag.pending = false;
+      void call('move_window', { x: jsDrag.lastX, y: jsDrag.lastY });
+    });
+  }
+  function endJsDrag() {
+    if (!jsDrag) return;
+    if (jsDrag.raf) cancelAnimationFrame(jsDrag.raf);
+    const dx = jsDrag.lastX, dy = jsDrag.lastY;
+    jsDrag = null;
+    window.removeEventListener('mousemove', onJsDragMove, true);
+    window.removeEventListener('mouseup', endJsDrag, true);
+    void call('move_window', { x: dx, y: dy }).then(() => call('commit_window_state'));
+  }
+
+  // ---- edge resize (窗口边缘拖拽调整大小) ----
+  // 原版用 #resizeLayer 的 8 个 .rsz 手柄 + resize_window 后端实现；
+  // 移植时只带了 CSS 与标记，JS 绑定整段丢失，导致窗口无法拖边调整大小。
+  const RZ_MIN_W = 1120, RZ_MIN_H = 640;
+  function resizeTarget(dir: string, w0: number, h0: number, dx: number, dy: number): number[] {
+    let w = w0, h = h0;
+    if (dir.indexOf('e') >= 0) w = w0 + dx;
+    if (dir.indexOf('w') >= 0) w = w0 - dx;
+    if (dir.indexOf('s') >= 0) h = h0 + dy;
+    if (dir.indexOf('n') >= 0) h = h0 - dy;
+    return [Math.max(RZ_MIN_W, Math.round(w)), Math.max(RZ_MIN_H, Math.round(h))];
+  }
+  let resizeBound = false;
+  function bindResize(): void {
+    if (resizeBound) return;
+    resizeBound = true;
+    const layer = document.getElementById('resizeLayer');
+    const hud = document.getElementById('sizeHud');
+    const hudText = document.getElementById('sizeHudText');
+    if (layer) layer.hidden = false;
+    let gen = 0, dragging = false, hudTimer = 0;
+    let inFlight = false, target: any = null, targetGen = 0;
+    function flush() {
+      if (!target || targetGen !== gen) { inFlight = false; target = null; return; }
+      const p = target;
+      target = null;
+      inFlight = true;
+      void call('resize_window', { width: p[0], height: p[1], fix_point: p[2] }).then(flush, flush);
+    }
+    function push(w: number, h: number, dir: string, my: number) {
+      if (my !== gen) return;
+      target = [w, h, dir];
+      targetGen = my;
+      if (!inFlight) flush();
+    }
+    // 事件委托挂在 document 上：resizeLayer 可能被框架重渲染替换，
+    // 绑在具体节点上的 mousedown 监听会随旧节点一起失效。
+    document.addEventListener('mousedown', async (e: MouseEvent) => {
+      const t = e.target as HTMLElement | null;
+      const handle = t && t.closest ? t.closest('.rsz') as HTMLElement | null : null;
+      if (!handle || e.button !== 0) return;
+      {
+        e.preventDefault();
+        e.stopPropagation();
+        const dir = handle.getAttribute('data-dir') || 'se';
+        const sx = e.screenX, sy = e.screenY;
+        target = null; inFlight = false; targetGen = 0;
+        const my = ++gen;
+        dragging = true;
+        $setState('winMaximized', false);
+        document.body.classList.add('resizing');
+        if (hudTimer) clearTimeout(hudTimer);
+        const rect: any = await call('get_window_rect');
+        if (my !== gen) return;
+        const w0 = (rect && rect.ok) ? Number(rect.width) : Math.round(window.outerWidth);
+        const h0 = (rect && rect.ok) ? Number(rect.height) : Math.round(window.outerHeight);
+        if (hudText) hudText.textContent = w0 + ' × ' + h0;
+        if (hud) hud.hidden = false;
+        const onMove = (ev: MouseEvent) => {
+          if (my !== gen) return;
+          const xy = resizeTarget(dir, w0, h0, ev.screenX - sx, ev.screenY - sy);
+          if (hudText) hudText.textContent = xy[0] + ' × ' + xy[1];
+          push(xy[0], xy[1], dir, my);
+        };
+        const onUp = () => {
+          window.removeEventListener('mousemove', onMove, true);
+          window.removeEventListener('mouseup', onUp, true);
+          if (my !== gen) return;
+          gen++;
+          target = null; inFlight = false; targetGen = 0;
+          dragging = false;
+          document.body.classList.remove('resizing');
+          hudTimer = setTimeout(() => { if (!dragging && hud) hud.hidden = true; }, 800) as any;
+          void call('commit_window_state');
+        };
+        window.addEventListener('mousemove', onMove, true);
+        window.addEventListener('mouseup', onUp, true);
+      }
+    }, true);
+  }
+  function onTitlebarDouble(e: MouseEvent) {
+    const t: any = e.target as HTMLElement;
+    if (t && t.closest && t.closest('select, input, button, .serial-bar, .profile-picker')) return;
+    void winMax();
+  }
+  function onTitlebarContext(e: MouseEvent) {
+    if (!inApp()) return;
+    e.preventDefault();
+    void call('window_system_menu');
+  }
+
+  // ---- profile switching (titlebar) ----
+  async function switchToProfile(id: string) {
+    if (!id || id === String((S().boot && S().boot.profile_id) || '')) return;
+    if (S().running) { toast('任务执行中，暂不能切换配置集', 'warn'); $setState('profileSel', String((S().boot && S().boot.profile_id) || '')); return; }
+    const r: any = await call('switch_profile', { profile_id: id });
+    if (r && r.ok) {
+      await bootApp();
+      toast('已切换到「' + ((r.profile && r.profile.name) || id) + '」', 'ok');
+    } else {
+      toast((r && r.error) || '切换失败', 'err');
+      $setState('profileSel', String((S().boot && S().boot.profile_id) || ''));
+    }
+  }
+
+  // ---- icons (lucide + [data-icon] placeholders, original loader order) ----
+  let iconsLoading = false; let iconTimer: any = null;
+  function scheduleIcons() {
+    if (iconTimer) return;
+    iconTimer = setTimeout(() => {
+      iconTimer = null;
+      try {
+        // renderIcons 已内部按需调用 lucide.createIcons（仅当出现新 [data-icon] 时）。
+        // 这里不要再无条件调 createIcons——那会每 500ms 把全页图标 SVG 重建一遍，
+        // 造成界面持续闪烁/刷新、打断滚动与焦点。
+        if ((window as any).renderIcons) (window as any).renderIcons(document);
+      } catch (e) { /* noop */ }
+    }, 30);
+  }
+  function loadScript(src: string): Promise<void> {
+    return new Promise((resolve) => {
+      const el = document.createElement('script');
+      el.src = src; el.onload = () => resolve(); el.onerror = () => resolve();
+      document.head.appendChild(el);
+    });
+  }
+  async function loadIcons() {
+    if (iconsLoading) return;
+    iconsLoading = true;
+    await loadScript('/js/lucide-icons.js');
+    await loadScript('/js/lucide.min.js');
+    await loadScript('/js/icons.js');
+    scheduleIcons();
+  }
+
+  function onKey(e: KeyboardEvent) {
+    if (e.key === 'F1') { e.preventDefault(); $setState('shortcutsOpenState', !shortcutsOpenState()); return; }
+    if ((e.ctrlKey || e.metaKey) && (e.key === 'l' || e.key === 'L')) { e.preventDefault(); clearLogs(); return; }
+    if (e.key === 'Escape') {
+      // Original Esc chain ends with the modal. One authoritative broadcast:
+      // every Dialog sets its own closedByEsc latch and hides itself. No
+      // per-dialog onClose races, no DOM sweeps that a later sync can undo.
+      if (shortcutsOpenState()) { e.stopImmediatePropagation(); $setState('shortcutsOpenState', false); }
+      try {
+        document.dispatchEvent(new CustomEvent('rosezm:dialog-close-all'));
+        // Views keep their own dlg/iconOpen state; reset it so a later open
+        // is a genuine false -> true transition (not a no-op state write).
+        document.dispatchEvent(new CustomEvent('rosezm:dialog-reset'));
+        // Authoritative DOM pass: even a Dialog whose onMount did not run
+        // (or whose layer was re-created) is hidden and flagged.
+        for (const el of Array.from(document.querySelectorAll('.modal-layer')) as HTMLElement[]) {
+          el.dataset.esc = '1';
+          el.hidden = true;
+          el.style.display = 'none';
+        }
+      } catch (err) { /* noop */ }
+    }
+  }
+
+  let iconSweep: any = null;
+  onMount(() => {
+    iconSweep = setInterval(() => scheduleIcons(), 500);
+    document.documentElement.lang = 'zh-CN';
+    syncWebClass();
+    try {
+      // pywebview 桥注入后重新判定一次（桌面模式应去掉 is-web）
+      window.addEventListener('pywebviewready', syncWebClass);
+      setTimeout(syncWebClass, 300);
+      setTimeout(syncWebClass, 1200);
+    } catch (e) { /* noop */ }
+    void loadIcons();
+    // 边缘拖拽调大小：需要 pywebview 桥。冻结版启动慢时桥可能晚于
+    // 300/1200ms 才注入，只按固定时机检查会漏绑（手柄在、hit-test 命中，
+    // 但没有任何 mousedown 监听 → 拖边完全无反应）。改成像原版那样
+    // 轮询直到桥就绪；同时每次重查 layer 是否是同一个 DOM 节点
+    // （组件重渲染会替换节点， dataset.bound 跟着丢失）。
+    let resizeTries = 0;
+    const enableResize = () => {
+      if (inApp()) { bindResize(); return; }
+      if (resizeTries++ < 100) setTimeout(enableResize, 120);
+    };
+    try {
+      window.addEventListener('pywebviewready', enableResize);
+      enableResize();
+    } catch (e) { /* noop */ }
+    document.addEventListener('keydown', onKey, true);
+    void bootApp();
+    try {
+      window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', () => {
+        if (S().config && S().config.ui && S().config.ui.theme === 'auto') applyTheme(S().config);
+      });
+    } catch (e) { /* noop */ }
+    (globalThis as any).__ATDBG = { read: () => S(), call, toast, goto };
+  });
+  onCleanup(() => {
+    set('polling', false);
+    if (iconSweep) clearInterval(iconSweep);
+    document.removeEventListener('keydown', onKey, true);
+  });
+
+  // Original selectPreset(): selection + fresh param defaults live in shell S
+  // (original app.js kept S.preset/S.presetParams global). Views reach it
+  // through the focus channel below (any view) or direct selection state.
+  function selectPreset(id: string) {
+    const list = ((S().boot && S().boot.presets) as any[]) || [];
+    const p = list.find((x) => x.id === id);
+    if (!p) return;
+    const params: Record<string, unknown> = {};
+    for (const f of ((p.fields as any[]) || [])) params[f.key] = f['default'];
+    patch({ preset: p, presetParams: params });
+    setTimeout(() => {
+      try {
+        const el = document.getElementById('presetPanel');
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      } catch (e) { /* noop */ }
+    }, 0);
+  }
+  // cross-view focus channel: dashboard etc. set S.focus, shell applies it
+  $effect(() => {
+    const f = S().focus;
+    if (!f || !f.view || !f.id) return;
+    if (f.view === 'preset') {
+      set('focus', { view: '', id: '' });
+      selectPreset(f.id);
+    }
+  });
+
+  // The original handleProgress() summary half lives here (shell owns the
+  // signal): finish toasts per kind, baseline diff hand-off to SuitesView,
+  // lastResult refresh for the dashboard.
+  let seenSumKey = '';
+  $effect(() => {
+    const p = S().progress;
+    if (!p || !p.kind || !p.finished || !p.summary) return;
+    const key = String(p.kind) + '|' + String(p.started_at);
+    if (key === seenSumKey) return;
+    seenSumKey = key;
+    const sum: any = p.summary;
+    if (Number(sum.failed || 0) !== 0) {
+      toast('执行完成：通过 ' + sum.passed + '/' + sum.total + '，失败 ' + sum.failed, 'warn');
+    }
+    if (sum.baseline) {
+      const b = sum.baseline;
+      toast('基线对比：' + b.same + ' 一致 / ' + b.changed + ' 有差异', b.changed ? 'warn' : 'ok');
+      set('baselineDiff', b);
+    }
+    void (async () => {
+      const r: any = await call('get_last_result');
+      if (r) {
+        set('lastResult', {
+          total: r.total || 0, passed: r.passed || 0, failed: r.failed || 0,
+          skipped: r.skipped || 0, duration: r.duration || 0, results: r.results || [],
+        });
+      }
+    })();
+  });
+
+  // re-apply theme/brand/classes + icons whenever the relevant state moves.
+  // S() is now a plain compatibility view (not a signal), so an effect that
+  // only calls S() would subscribe to NOTHING and never re-run after mount —
+  // 设置页的动画/缩放/透明度/主题改了却不生效全是这个原因。
+  // Explicitly read every leaf the effect depends on.
+  $effect(() => {
+    const c = sConfig();
+    const b = sBoot();
+    const busyNow = sBusy();
+    const pageNow = sPage();
+    void pageNow;
+    if (c) applyTheme(c);
+    if (b) applyBrand();
+    try {
+      document.body.dataset.edit = (b && b.edit_mode) ? 'on' : 'off';
+      document.body.classList.toggle('busy', !!busyNow);
+    } catch (e) { /* noop */ }
+    scheduleIcons();
+  });
+</script>
+
+<div class="bg-orbs" aria-hidden="true">
+  <span class="orb orb-1"></span><span class="orb orb-2"></span>
+  <span class="orb orb-3"></span><span class="grid-lines"></span>
+</div>
+
+{#if splashPhase() < 2}
+<div id="splash" class="splash " class:hide={splashPhase() >= 1}>
+  <div class="splash-logo">
+    <svg viewBox="0 0 48 48" width="72" height="72" aria-hidden="true">
+      <path d="M10 34 L20 14 L28 26 L38 12" fill="none" stroke="currentColor"
+            stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="38" cy="12" r="3.4" fill="currentColor"/>
+    </svg>
+  </div>
+  <div class="splash-title" id="splashTitle">AT指令调试台</div>
+  <div class="splash-sub" id="splashSub">正在加载配置集…</div>
+  <div class="splash-bar"><i></i></div>
+</div>
+{/if}
+
+<header class="titlebar">
+  <div class="titlebar-drag" on:mousedown={onTitlebarDown} on:dblclick={onTitlebarDouble} on:contextmenu={onTitlebarContext}>
+    <div class="brand">
+      <span class="brand-mark">
+        <svg viewBox="0 0 48 48" width="20" height="20" aria-hidden="true">
+          <path d="M10 34 L20 14 L28 26 L38 12" fill="none" stroke="currentColor"
+                stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+          <circle cx="38" cy="12" r="3.6" fill="currentColor"/>
+        </svg>
+      </span>
+      <span class="brand-name" id="brandName">{(boot() && boot().brand) || 'AT指令调试台'}</span>
+      <span class="brand-ver" id="brandVersion">v{(boot() && boot().version) || '1.0.2'}</span>
+      {#if showProfilePick()}
+        <div class="profile-picker" id="profilePicker">
+          <span class="pp-ico" data-icon="grid"></span>
+          <select class="mini-select" id="selProfile" title="切换配置集（OEM）" on:change={onProfileChange} bind:value={profileSel}>
+            {#each profileOptions() as p}
+              <option value={p.id}>{p.name || p.id}</option>
+            {/each}
+          </select>
+        </div>
+      {/if}
+      <div class="serial-bar" id="serialBar">
+          <select class="mini-select" id="selPort" on:change={onPortChange} bind:value={portSel}>
+            <option value="">选择串口</option>
+            {#each portOptions() as p}
+              <option value={p.device}>{p.device}{p.description ? ' · ' + p.description : ''}</option>
+            {/each}
+          </select>
+          <input class="mini-input baud" id="selBaud" list="baudList" on:change={onBaudChange} bind:value={baudSel} />
+          <datalist id="baudList">{#each BAUDS as b}<option value={b}></option>{/each}</datalist>
+          <button class="icon-btn" id="btnRefreshPorts" title="刷新串口列表" on:click={refreshPorts}><i class="lci" data-icon="refresh-cw" data-lucide="refresh-cw"></i></button>
+          {#if isConnected()}
+            <button class="ghost-btn danger" id="btnConnect" on:click={doDisconnect}>断开</button>
+          {/if}
+          {#if !isConnected()}
+            <button class="primary-btn" id="btnConnect" on:click={doConnect}>连接</button>
+          {/if}
+          <button class="ghost-btn pin-btn-sm " class:pin-on={pinOn('dtr')} id="btnDTR" title="DTR 电平" on:click={toggleDtr}><span class="pin-label">DTR{pinOn('dtr') ? '\u2191' : '\u2193'}</span></button>
+          <button class="ghost-btn pin-btn-sm " class:pin-on={pinOn('rts')} id="btnRTS" title="RTS 电平" on:click={toggleRts}><span class="pin-label">RTS{pinOn('rts') ? '\u2191' : '\u2193'}</span></button>
+        </div>
+    </div>
+  </div>
+  <div class="titlebar-actions" id="titlebarActions">
+    <button class="win-btn" id="btnHelp" title="快捷键帮助（F1）" on:click={winHelp}>?</button>
+    <button class="win-btn" class:on={winTopmost()} id="btnPin" title={winTopmost() ? '取消置顶' : '窗口置顶'} on:click={winPin}>
+      <svg viewBox="0 0 16 16" width="12" height="12">
+        <path d="M8 2a3 3 0 0 1 3 3c0 1.6-1.1 2.4-2 2.9V13a1 1 0 0 1-2 0V7.9C6.1 7.4 5 6.6 5 5a3 3 0 0 1 3-3z"
+              fill="currentColor"/>
+      </svg>
+    </button>
+    <button class="win-btn" id="btnMin" title="最小化" on:click={winMin}>
+      <svg viewBox="0 0 16 16" width="12" height="12"><path d="M2 8h12"
+        stroke="currentColor" stroke-width="1.6" fill="none"/></svg>
+    </button>
+    <button class="win-btn" id="btnMax" title={winMaximized() ? '还原' : '最大化'} on:click={winMax}>
+      {#if winMaximized()}
+      <svg viewBox="0 0 16 16" width="12" height="12">
+        <rect x="5" y="5" width="9" height="9" rx="1.2" stroke="currentColor" stroke-width="1.5" fill="none"/>
+        <path d="M11 5V3.2A1.2 1.2 0 0 0 9.8 2H3.2A1.2 1.2 0 0 0 2 3.2v6.6A1.2 1.2 0 0 0 3.2 11H5" stroke="currentColor" stroke-width="1.5" fill="none"/>
+      </svg>
+      {/if}
+      {#if !winMaximized()}
+      <svg viewBox="0 0 16 16" width="12" height="12"><rect x="3" y="3"
+        width="10" height="10" rx="1.5" stroke="currentColor"
+        stroke-width="1.6" fill="none"/></svg>
+      {/if}
+    </button>
+    <button class="win-btn win-close" id="btnClose" title="关闭" on:click={winClose}>
+      <svg viewBox="0 0 16 16" width="12" height="12"><path d="M4 4l8 8M12 4l-8 8"
+        stroke="currentColor" stroke-width="1.6" fill="none"/></svg>
+    </button>
+  </div>
+</header>
+
+<div class="app">
+  <aside class="sidebar">
+    <nav class="nav" id="nav">
+      <button class="nav-item " class:active={page()==='dashboard'} data-page="dashboard" on:click={() => goto('dashboard')}>
+        <span class="nav-ico" data-icon="gauge"></span>
+        <span class="nav-text" data-i18n="nav.dashboard">仪表盘</span>
+      </button>
+      <button class="nav-item " class:active={page()==='presets'} data-page="presets" on:click={() => goto('presets')}>
+        <span class="nav-ico" data-icon="rocket"></span>
+        <span class="nav-text" data-i18n="nav.presets">一键配置</span>
+      </button>
+      <button class="nav-item " class:active={page()==='buttons'} data-page="buttons" on:click={() => goto('buttons')}>
+        <span class="nav-ico" data-icon="grid"></span>
+        <span class="nav-text" data-i18n="nav.buttons">常用功能</span>
+      </button>
+      <button class="nav-item " class:active={page()==='suites'} data-page="suites" on:click={() => goto('suites')}>
+        <span class="nav-ico" data-icon="check"></span>
+        <span class="nav-text" data-i18n="nav.suites">测试套件</span>
+      </button>
+      <button class="nav-item " class:active={page()==='terminal'} data-page="terminal" on:click={() => goto('terminal')}>
+        <span class="nav-ico" data-icon="terminal"></span>
+        <span class="nav-text" data-i18n="nav.terminal">串口终端</span>
+      </button>
+      <button class="nav-item " class:active={page()==='logs'} data-page="logs" on:click={() => goto('logs')}>
+        <span class="nav-ico" data-icon="scroll-text"></span>
+        <span class="nav-text">运行日志</span>
+      </button>
+      <button class="nav-item " class:active={page()==='errcodes'} data-page="errcodes" on:click={() => goto('errcodes')}>
+        <span class="nav-ico" data-icon="shield-alert"></span>
+        <span class="nav-text">错误码库</span>
+      </button>
+      <button class="nav-item " class:active={page()==='commands'} data-page="commands" on:click={() => goto('commands')}>
+        <span class="nav-ico" data-icon="list"></span>
+        <span class="nav-text" data-i18n="nav.commands">指令库</span>
+      </button>
+      <button class="nav-item " class:active={page()==='settings'} data-page="settings" on:click={() => goto('settings')}>
+        <span class="nav-ico" data-icon="gear"></span>
+        <span class="nav-text" data-i18n="nav.settings">设置</span>
+      </button>
+      <button class="nav-item " class:active={page()==='about'} data-page="about" on:click={() => goto('about')}>
+        <span class="nav-ico" data-icon="info"></span>
+        <span class="nav-text" data-i18n="nav.about">关于</span>
+      </button>
+    </nav>
+    <div class="sidebar-foot">
+      <div class="conn-pill " class:on={isConnected()} id="connPill">
+        <span class="dot"></span><span class="conn-text">{connText()}</span>
+      </div>
+    </div>
+  </aside>
+
+  <main class="main" id="main">
+
+    <DashboardView s={getS} onSet={set} onCall={call} onToast={toast} onGoto={goto} />
+    <PresetsView s={getS} onSet={set} onCall={call} onToast={toast} onGoto={goto} />
+    <CommandsView s={getS} onSet={set} onCall={call} onToast={toast} onGoto={goto} />
+    <ButtonsView s={getS} onSet={set} onCall={call} onToast={toast} onGoto={goto} />
+    <SuitesView s={getS} onSet={set} onCall={call} onToast={toast} onGoto={goto} />
+    <TerminalView s={getS} onSet={set} onCall={call} onToast={toast} onGoto={goto} />
+    <LogsView s={getS} onSet={set} onCall={call} onToast={toast} onGoto={goto} />
+    <ErrCodesView s={getS} onSet={set} onCall={call} onToast={toast} onGoto={goto} />
+    <SettingsView s={getS} onSet={set} onCall={call} onToast={toast} onGoto={goto} />
+    <AboutView s={getS} onSet={set} onCall={call} onToast={toast} onGoto={goto} />
+  </main>
+</div>
+
+<footer class="statusbar">
+  <span class="sb-item" id="sbPort">{sbPort()}</span>
+  <span class="sb-sep"></span>
+  <span class="sb-item" id="sbBaud">{sbBaud()}</span>
+  <span class="sb-sep"></span>
+  {#if uptimeText()}<span class="sb-item mono" id="sbUptime">{uptimeText()}</span>{/if}
+  {#if uptimeText()}<span class="sb-sep" id="sbUptimeSep"></span>{/if}
+  <span class="sb-item" id="sbPlatform">{(boot() && boot().platform) || '-'}</span>
+  <span class="sb-sep"></span>
+  <span class="sb-item mono" id="sbBytes" title="点击清零收发计数" on:click={resetCounters}>{bytesText()}</span>
+  <span class="sb-grow"></span>
+  <span class="sb-item mono" id="sbDataDir">{(boot() && boot().data_dir) || ''}</span>
+  <span class="sb-sep"></span>
+  <span class="sb-item" id="sbVersion">v{(boot() && boot().version) || '1.0.2'}</span>
+</footer>
+
+<div class="log-dock" id="logDock">
+  {#if dockOpen()}
+    <div class="dock-panel" id="dockPanel">
+    <div class="dock-head">
+      <span class="dock-title">最近串口日志</span>
+      <span class="dock-count" id="dockCount">{dockLogs().length} 条</span>
+      <span class="spacer"></span>
+      <button class="ghost-btn" id="dockGotoTerm" on:click={() => goto('terminal')}>去终端</button>
+      <button class="ghost-btn" id="dockExport" on:click={dockExport}>导出</button>
+      <button class="ghost-btn danger" id="dockClear" on:click={clearLogs}>清空</button>
+      <button class="ghost-btn" id="dockCollapse" on:click={() => $setState('dockOpenState', false)}>收起</button>
+    </div>
+    <div class="dock-list" id="dockList">
+      {#each dockLogs() as line}
+        <div class="log-line" on:click={() => copyLine(line)}>{#if dockTs()}<span class="log-ts">{fmtTs(line.ts)}</span>{/if}<span class={line.dir === 'tx' ? 'log-dir tx' : line.dir === 'sys' ? 'log-dir sys' : line.dir === 'mark' ? 'log-dir mark' : 'log-dir rx'}>{dirLabel(line.dir)}</span><span class={'log-text' + (lineClass(line) ? ' ' + lineClass(line) : '')}>{lineHex(line)}</span></div>
+      {/each}
+    </div>
+  </div>
+  {/if}
+  <button class="dock-bar" id="dockBar" title="点击展开最近串口日志" on:click={toggleDock}>
+    <span class="dock-ico" data-icon="terminal"></span>
+    <span class="dock-latest" id="dockLatest">{dockLatest()}</span>
+    <span class="dock-caret" id="dockCaret">{dockOpen() ? '收起' : '展开'}</span>
+  </button>
+</div>
+
+{#if shortcutsOpen()}
+  <div class="modal-layer" id="modalLayer">
+      <div class="modal-backdrop" id="modalBackdrop" on:click={() => $setState('shortcutsOpenState', false)}></div>
+    <div class="modal" id="modal">
+      <div class="modal-head"><h3 id="modalTitle">快捷键</h3>
+        <button class="icon-btn" id="modalClose" on:click={() => $setState('shortcutsOpenState', false)}>✕</button></div>
+      <div class="modal-body" id="modalBody">
+        <div class="kbd-list">
+          <div class="kbd-row"><span class="kbd">Ctrl+Enter</span><span>发送指令（多行框内）</span></div>
+          <div class="kbd-row"><span class="kbd">↑ / ↓</span><span>发送框历史指令回溯（光标在首/尾时）</span></div>
+          <div class="kbd-row"><span class="kbd">Ctrl+L</span><span>清空日志</span></div>
+          <div class="kbd-row"><span class="kbd">Ctrl+F</span><span>聚焦日志搜索</span></div>
+          <div class="kbd-row"><span class="kbd">Ctrl+H</span><span>HEX 视图切换</span></div>
+          <div class="kbd-row"><span class="kbd">Ctrl+T</span><span>时间戳显示切换</span></div>
+          <div class="kbd-row"><span class="kbd">Ctrl+M</span><span>添加收藏</span></div>
+          <div class="kbd-row"><span class="kbd">Ctrl+滚轮</span><span>串口终端字号调节</span></div>
+          <div class="kbd-row"><span class="kbd">Esc</span><span>分级关闭：自动补全 → 面板 → 弹窗</span></div>
+          <div class="kbd-row"><span class="kbd">F1</span><span>打开本帮助</span></div>
+        </div>
+      </div>
+      <div class="modal-foot"></div>
+    </div>
+  </div>
+{/if}
+
+<div class="toast-layer" id="toastLayer">
+  {#each toasts() as t (t.id)}
+    <div class={'toast' + (t.type ? ' ' + t.type : '')}>{t.msg}</div>
+  {/each}
+</div>
+
+<div class="resize-layer" id="resizeLayer" hidden>
+  <div class="rsz rsz-n"  data-dir="n"></div>
+  <div class="rsz rsz-s"  data-dir="s"></div>
+  <div class="rsz rsz-w"  data-dir="w"></div>
+  <div class="rsz rsz-e"  data-dir="e"></div>
+  <div class="rsz rsz-nw" data-dir="nw"></div>
+  <div class="rsz rsz-ne" data-dir="ne"></div>
+  <div class="rsz rsz-sw" data-dir="sw"></div>
+  <div class="rsz rsz-se" data-dir="se"></div>
+</div>
+
+<div class="size-hud" id="sizeHud" hidden><span id="sizeHudText">1120 × 720</span></div>
+
+{#if loopBannerOn()}
+<div class="loop-banner" id="loopBanner">
+  <span class="lb-dot"></span>
+  <span class="lb-text">循环发送进行中…</span>
+  <button class="lb-stop" id="btnLoopStop" on:click={stopLoopFromBanner}>停止循环发送</button>
+</div>
+{/if}

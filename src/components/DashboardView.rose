@@ -1,0 +1,189 @@
+<script>
+  // DashboardView - 1:1 port of index.html #page-dashboard + the matching
+  // app.js logic (renderDashboard / renderQuickActions / runPinned /
+  // refreshLastResult / renderSummary / pin helpers).
+  // Contract (see docs/contract.md): s/onSet/onCall/onToast/onGoto props.
+  // Read global state as s().key (props are plain values, NOT getters); write via onSet('key', value);
+  // backend via await onCall('method', args); toasts via onToast(msg, type).
+  export let s = null as any;
+  export let onSet = null as any;
+  export let onCall = null as any;
+  export let onToast = null as any;
+  export let onGoto = null as any;
+
+  let copied = $state(false);
+  // lastResult + the finish watcher live in the shell: child $effect cannot
+  // track plain props (they are snapshots), so cross-view reactions stay there.
+  function lastResult() { return (s && s().lastResult) || null; }
+
+  function boot() { return (s && s().boot) || {}; }
+  function isBusy() { return !!(s && (s().busy || s().busyExtra)); }
+
+  function statCards() {
+    const b = boot();
+    const pinned = (b.home && b.home.pinned) || [];
+    return [
+      { k: '指令总数', v: b.command_count || 0, acc: true },
+      { k: '测试用例', v: b.case_count || 0, acc: false },
+      { k: '场景模板', v: ((b.presets as any[]) || []).length, acc: false },
+      { k: '快速操作', v: pinned.length, acc: false },
+      { k: '常用功能', v: ((b.buttons as any[]) || []).length, acc: false },
+    ].map((st, i) => ({ k: st.k, v: st.v, acc: st.acc, i }));
+  }
+
+  function pinnedList() {
+    const b = boot();
+    return ((b.home && b.home.pinned) as any[]) || [];
+  }
+
+  function introText() {
+    const b = boot();
+    return (b.home && b.home.intro) || '';
+  }
+
+  function httpUrl() {
+    const b = boot();
+    return String(b.http_url || '');
+  }
+
+  async function copyHttp() {
+    const url = httpUrl();
+    if (!url) return;
+    try {
+      await navigator.clipboard.writeText(url);
+      onToast('链接已复制：' + url, 'ok');
+    } catch (e) {
+      const ta = document.createElement('textarea');
+      ta.value = url; document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy'); } catch (e2) { /* noop */ }
+      ta.remove();
+      onToast('链接已复制：' + url, 'ok');
+    }
+    $setState('copied', true);
+    setTimeout(() => $setState('copied', false), 1200);
+  }
+
+  // original runPinned()
+  async function onQuick(ref: string) {
+    if (isBusy()) { onToast('有批量任务正在执行，请先等待完成或停止', 'warn'); return; }
+    const r: any = await onCall('run_pinned', { ref });
+    if (!r) { onToast('执行失败：无响应', 'err'); return; }
+    if (r.need_params) {
+      const parts = String(ref).split(':');
+      if (parts[0] === 'preset') {
+        onGoto('presets');
+        onSet('focus', { view: 'preset', id: parts[1] });
+      }
+      return;
+    }
+    if (r.ok) {
+      const name = pinnedList().find((p: any) => p.ref === ref);
+      onToast('开始执行：' + ((name && name.name) || '操作'), 'ok');
+      const kind = String(ref).split(':')[0];
+      onGoto(kind === 'preset' ? 'presets' : (kind === 'suite' ? 'suites' : 'terminal'));
+    } else {
+      onToast(r.error || '执行失败', 'err');
+    }
+  }
+
+  function respVals(it: any): string[] {
+    const st = String((it && it.status) || '').trim();
+    return (((it && it.lines) as string[]) || []).map((l) => String(l).trim()).filter((l) => l && l !== st);
+  }
+
+  function ratePct() {
+    const r = lastResult();
+    if (!r || !r.total) return 0;
+    return Math.round((r.passed / r.total) * 100);
+  }
+
+  async function exportReport() {
+    const r: any = await onCall('export_report', { fmt: 'md' });
+    if (r && r.ok) {
+      onToast('已导出：' + r.path, 'ok');
+      void onCall('open_path', { path: r.path });
+    } else {
+      onToast((r && r.error) || '导出失败', 'err');
+    }
+  }
+
+</script>
+
+<section class="page " class:active={s && s().page==='dashboard'} id="page-dashboard">
+  <div class="page-head">
+    <h1 data-i18n="dash.title">仪表盘</h1>
+    <p class="page-sub" data-i18n="dash.sub">连接模组后即可开始一键配置与测试</p>
+    {#if httpUrl()}
+    <div class="http-chip " class:copied={copied()} id="httpChip" title="点击复制访问链接" on:click={copyHttp}>
+      <span class="hc-ico"><i class="lci" data-lucide="server"></i></span>HTTP 服务：<span class="mono">{httpUrl()}</span><span class="hc-copy"><i class="lci" data-lucide="copy"></i>复制</span>
+    </div>
+    {/if}
+  </div>
+  <div class="stat-row" id="statRow">
+    {#each statCards() as st (st.k)}
+    <div class="stat" style="animation-delay:{st.i * 60}ms">
+      <div class="stat-k">{st.k}</div>
+      <div class="stat-v " class:acc={st.acc}>{st.v}</div>
+    </div>
+    {/each}
+  </div>
+  <div class="panel">
+    <div class="panel-head">
+      <h3 data-i18n="dash.quick">快速操作</h3>
+      <span class="cmd-cat">来自「一键配置 / 常用功能 / 测试套件」的收藏，点击卡片即可运行</span>
+    </div>
+    <div class="quick-grid" id="quickGrid">
+      {#if !pinnedList().length}
+      <div class="dock-empty">还没有收藏任何快速操作。去「一键配置 / 常用功能 / 测试套件」点卡片上的 ★ 即可钉到首页。</div>
+      {/if}
+      {#each pinnedList() as a (a.ref)}
+      <div class="quick" data-ref={a.ref} style="animation-delay:0ms" on:click={() => onQuick(a.ref)}>
+        <span class="qi"><i class="lci" data-lucide={a.icon || 'bolt'}></i></span>
+        <span class="qt">{a.name}</span>
+        <span class="qs">{a.sub || ''}</span>
+      </div>
+      {/each}
+    </div>
+  </div>
+  <p class="profile-intro" id="profileIntro">{introText()}</p>
+  {#if lastResult()}
+  <div class="panel" id="lastResultPanel">
+    <div class="panel-head">
+      <h3 data-i18n="dash.last">最近一次执行结果</h3>
+      <button class="ghost-btn" id="btnExportDash" on:click={exportReport}>导出报告</button>
+    </div>
+    <div id="lastResultBody">
+      <div class="sum-pill">总计<b>{lastResult().total}</b></div>
+      <div class="sum-pill ok">通过<b>{lastResult().passed}</b></div>
+      <div class="sum-pill fail">失败<b>{lastResult().failed}</b></div>
+      <div class="sum-pill">跳过<b>{lastResult().skipped}</b></div>
+      <div class="sum-pill">通过率<b>{ratePct()}%</b></div>
+      <div class="sum-pill">耗时<b>{lastResult().duration}s</b></div>
+      {#if (lastResult().results || []).length}
+      <div class="result-table-wrap" style="margin-top:10px">
+        <table class="result-table">
+          <thead><tr><th>步骤</th><th>指令</th><th>模组返回</th><th>结果</th></tr></thead>
+          <tbody>
+            {#each lastResult().results as it}
+            <tr>
+              <td>{it.label || it.name || it.cmd || ''}</td>
+              <td><code>{it.cmd || ''}</code></td>
+              <td class="mono resp-cell">
+                {#if respVals(it).length}{respVals(it).join('\n')}{/if}
+                {#if !respVals(it).length}<span class="dim">-</span>{/if}
+              </td>
+              <td>
+                {#if it.skipped}<span class="run-badge skip">跳过</span>{/if}
+                {#if !it.skipped && it.ok}<span class="run-badge ok">通过</span>{/if}
+                {#if !it.skipped && !it.ok}<span class="run-badge fail">失败</span>{/if}
+              </td>
+            </tr>
+            {/each}
+          </tbody>
+        </table>
+      </div>
+      {/if}
+    </div>
+  </div>
+  {/if}
+</section>

@@ -1,0 +1,633 @@
+<script>
+  // ButtonsView - 1:1 port of index.html #page-buttons + the matching app.js logic.
+  // Contract (see docs/contract.md): s/onSet/onCall/onToast/onGoto props.
+  // Read global state as s().key (props are plain values, NOT getters); write via onSet('key', value);
+  // backend via await onCall('method', args); toasts via onToast(msg, type).
+  export let s = null as any;
+  export let onSet = null as any;
+  export let onCall = null as any;
+  export let onToast = null as any;
+  export let onGoto = null as any;
+
+  // ---- view-local state (renderButtons / edit dialog / dnd / toolbar) ----
+  let list = $state<any[]>([]);
+  let loaded = $state(false);
+  let runningId = $state('');
+  let dlg = $state<any>({ open: false, id: '', title: '' });
+  let editBtnId = $state('');
+  let bName = $state('');
+  let bGroup = $state('');
+  let bGroupCustom = $state('');
+  let bIcon = $state('bolt');
+  let bColor = $state('blue');
+  let bDelay = $state('');
+  let bNote = $state('');
+  let bCmds = $state('');
+  let delBtnId = $state('');
+  let delBtnText = $state('');
+  let impText = $state('');
+  let iconNames = $state<any[]>([]);
+  let ipKw = $state('');
+
+  let dragEl: any = null;
+  let dragId = '';
+  let dragGroup = '';
+  let loadedPid: any = undefined;
+
+  const COLOR_CHOICES = [
+    { v: 'blue', n: '蓝' }, { v: 'violet', n: '紫' }, { v: 'teal', n: '青' },
+    { v: 'amber', n: '橙' }, { v: 'rose', n: '粉' },
+  ];
+
+  // ---- helpers ----
+  function bootObj(): any { return (s && s().boot) || null; }
+  function editMode(): boolean { const b = bootObj(); return !!(b && b.edit_mode); }
+  function connected(): boolean {
+    const st = (s && s().status) || (bootObj() && bootObj().status) || null;
+    return !!(st && st.connected);
+  }
+
+  // mirrors icons.js resolve(): LUCIDE_ICONS hit → as-is, else alias map
+  function ico(name: string): string {
+    const n = String(name || 'bolt');
+    const g: any = globalThis;
+    try {
+      if (g && Array.isArray(g.LUCIDE_ICONS) && g.LUCIDE_ICONS.indexOf(n) >= 0) return n;
+    } catch (_err) { /* ignore */ }
+    const ALIAS: any = {
+      grid: 'layout-grid', gear: 'settings', wave: 'activity',
+      reset: 'rotate-ccw', bolt: 'zap', edit: 'pencil', trash: 'trash-2',
+      up: 'arrow-up', down: 'arrow-down', stop: 'square', export: 'upload',
+      warning: 'triangle-alert', close: 'x', port: 'cable', bookmarks: 'bookmark',
+    };
+    return ALIAS[n] || n;
+  }
+
+  async function callList(method: string, args?: any): Promise<any[]> {
+    try {
+      const r = await onCall(method, args || {});
+      if (Array.isArray(r)) return r;
+      if (r && Array.isArray(r.result)) return r.result;
+      if (r && Array.isArray(r.commands)) return r.commands;
+      if (r && Array.isArray(r.buttons)) return r.buttons;
+      if (r && Array.isArray(r.ports)) return r.ports;
+      return [];
+    } catch (_err) {
+      return [];
+    }
+  }
+
+  async function loadButtons(): Promise<void> {
+    const arr = await callList('get_buttons', {});
+    $setState('list', arr);
+    $setState('loaded', true);
+  }
+
+  // group order = first-seen order in the backend-sorted list;
+  // buttons without a group land in 未分组 (same as renderButtons)
+  function groupList(): any[] {
+    const groups: any = {};
+    const keys: string[] = [];
+    for (const b of list()) {
+      const g = String((b && b.group) || '未分组');
+      if (!groups[g]) { groups[g] = []; keys.push(g); }
+      groups[g].push(b);
+    }
+    // BUG.md workaround: row state travels WITH the row data (per-row
+    // markers inside an external component do not re-patch on state writes).
+    const running = runningId();
+    return keys.map((g) => ({
+      name: g,
+      items: groups[g].map((b: any) => ({ b, running: running === b.id })),
+    }));
+  }
+
+  function ubCmds(b: any): string {
+    return ((b && b.commands) || []).join(' ; ');
+  }
+
+  function pinned(ref: string): boolean {
+    const b = bootObj();
+    const home = (b && b.home) || {};
+    for (const p of (home.pinned || [])) {
+      if (p && (String(p.kind) + ':' + String(p.id)) === ref) return true;
+    }
+    return false;
+  }
+  async function togglePin(kind: string, id: string) {
+    const b = bootObj() || {};
+    if (pinned(kind + ':' + id)) {
+      let r: any = null;
+      try { r = await onCall('unpin_item', { kind: kind, item_id: id }); }
+      catch (_err) { r = null; }
+      if (r && r.ok) {
+        onSet('boot', { ...b, home: r });
+        onToast('已取消收藏', 'ok');
+      } else onToast((r && r.error) || '取消收藏失败', 'err');
+    } else {
+      let r: any = null;
+      try { r = await onCall('pin_item', { kind: kind, item_id: id }); }
+      catch (_err) { r = null; }
+      if (!r || !r.ok) { onToast((r && r.error) || '收藏失败', 'err'); return; }
+      onSet('boot', { ...b, home: r });
+      onToast('已钉到首页快速操作', 'ok');
+    }
+  }
+
+  // ---- card interactions ----
+  async function runButton(id: string) {
+    if (s && (s().busy || s().running)) { onToast('已有任务在执行', 'warn'); return; }
+    if (!connected()) { onToast('请先连接串口', 'warn'); return; }
+    $setState('runningId', id);
+    const rid = id;
+    const r: any = await onCall('run_button', { button_id: id, ctx: {} });
+    setTimeout(() => {
+      if (runningId() === rid) $setState('runningId', '');
+    }, 1200);
+    if (r && r.ok) {
+      onToast('开始执行按钮指令', 'ok');
+      onGoto('presets');
+    } else onToast((r && r.error) || '执行失败', 'err');
+  }
+  function onUbClick(e: any, id: string) {
+    try {
+      const t = e && e.target;
+      if (t && t.closest && (t.closest('.ub-tools') || t.closest('.pin-btn'))) return;
+    } catch (_err) { /* ignore */ }
+    void runButton(id);
+  }
+  function pinClick(e: any, id: string) {
+    if (e && e.stopPropagation) e.stopPropagation();
+    void togglePin('button', id);
+  }
+  function toolBtn(e: any, act: string, id: string) {
+    if (e && e.stopPropagation) e.stopPropagation();
+    if (act === 'edit') void editButton(id);
+    if (act === 'del') askDeleteBtn(id);
+    if (act === 'copy') void dupButton(id);
+    if (act === 'up' || act === 'down') void moveButton(id, act === 'up' ? -1 : 1);
+  }
+
+  // original moveBtn: backend reorders within the sorted button list.
+  async function moveButton(id: string, direction: number) {
+    const r: any = await onCall('move_button', { button_id: id, direction: direction });
+    if (r && r.ok) void loadButtons();
+    else onToast((r && r.error) || '移动失败', 'err');
+  }
+
+  // ---- dialogs ----
+  function openDlg(id: string, title: string) {
+    $setState('dlg', { open: true, id: id, title: title });
+    try { document.dispatchEvent(new CustomEvent('rosezm:dialog-sync', { detail: { reopen: true, key: 'buttons' } })); } catch (e) { /* noop */ }
+  }
+  function closeDlg() { $setState('dlg', { open: false, id: '', title: '' });
+    try { document.dispatchEvent(new CustomEvent('rosezm:dialog-sync')); } catch (e) { /* noop */ } }
+
+  function existingGroups(): any[] {
+    const out: any[] = [];
+    const seen: any = {};
+    for (const x of list()) {
+      const g = String((x && x.group) || '未分组');
+      if (!seen[g]) { seen[g] = true; out.push({ id: g, name: g }); }
+    }
+    return out;
+  }
+
+  async function editButton(id: string) {
+    let b: any = null;
+    for (const x of list()) { if (x && x.id === id) { b = x; break; } }
+    const data = b ? { ...b } : {
+      name: '', icon: 'bolt', color: 'blue', group: '自定义',
+      commands: ['AT'], delay: 0.35, note: '',
+    };
+    const groups = existingGroups();
+    const cur = String(data.group || '自定义');
+    const known = groups.some((g: any) => g.id === cur);
+    $setState('editBtnId', id);
+    $setState('bName', String(data.name || ''));
+    if (known) {
+      $setState('bGroup', cur);
+      $setState('bGroupCustom', '');
+    } else {
+      $setState('bGroup', '__custom__');
+      $setState('bGroupCustom', cur);
+    }
+    $setState('bIcon', String(data.icon || 'bolt'));
+    // COLOR_CHOICES only offers the 5 editor colors; the original select
+    // shows no matching <option> for anything else and falls back to the
+    // first option (blue) — reproduce that
+    let col = String(data.color || 'blue');
+    if (!COLOR_CHOICES.some((cc: any) => cc.v === col)) col = 'blue';
+    $setState('bColor', col);
+    $setState('bDelay', data.delay == null ? '' : String(data.delay));
+    $setState('bNote', String(data.note || ''));
+    $setState('bCmds', (data.commands || []).join('\n'));
+    openDlg('editBtn', id ? '编辑按钮' : '新建按钮');
+  }
+  function addBtn() { void editButton(''); }
+
+  function getGroup(): string {
+    if (String(bGroup()) === '__custom__') {
+      const groups = existingGroups();
+      const fb = groups.length ? String(groups[0].id) : '';
+      return String(bGroupCustom()).trim() || fb;
+    }
+    return String(bGroup());
+  }
+  function onGroupChange() {
+    if (String(bGroup()) === '__custom__') {
+      try {
+        const el: any = document.getElementById('bGroupPickCustom');
+        if (el && el.focus) el.focus();
+      } catch (_err) { /* ignore */ }
+    }
+  }
+
+  async function saveBtn() {
+    const payload: any = {
+      name: String(bName()).trim() || '未命名',
+      icon: String(bIcon() || 'bolt'),
+      color: String(bColor()),
+      group: getGroup() || '自定义',
+      delay: parseFloat(String(bDelay())) || 0.35,
+      note: String(bNote()),
+      commands: String(bCmds()).split('\n'),
+    };
+    // original editButton save does not check r.ok — just refetch + 已保存
+    if (editBtnId()) await onCall('update_button', { button_id: editBtnId(), payload: payload });
+    else await onCall('add_button', { payload: payload });
+    await loadButtons();
+    onToast('已保存', 'ok');
+    closeDlg();
+  }
+
+  async function dupButton(id: string) {
+    await onCall('duplicate_button', { button_id: id });
+    await loadButtons();
+    onToast('已复制按钮', 'ok');
+  }
+  function askDeleteBtn(id: string) {
+    let name = id;
+    for (const x of list()) { if (x && x.id === id) { name = String((x as any).name || id); break; } }
+    $setState('delBtnId', id);
+    $setState('delBtnText', name);
+    openDlg('delBtn', '删除按钮');
+  }
+  async function confirmDeleteBtn() {
+    await onCall('delete_button', { button_id: delBtnId() });
+    await loadButtons();
+    onToast('已删除', 'ok');
+    closeDlg();
+  }
+
+  // ---- icon picker (window.LUCIDE_ICONS grid) ----
+  function openIconPicker() {
+    let names: any[] = [];
+    const g: any = globalThis;
+    try {
+      if (g && Array.isArray(g.LUCIDE_ICONS)) names = g.LUCIDE_ICONS.slice();
+    } catch (_err) { names = []; }
+    $setState('iconNames', names);
+    $setState('ipKw', '');
+    openDlg('iconPick', '选择图标');
+  }
+  function backToEdit() {
+    openDlg('editBtn', editBtnId() ? '编辑按钮' : '新建按钮');
+  }
+  function ipFiltered(): string[] {
+    const kwv = String(ipKw()).toLowerCase();
+    const out: string[] = [];
+    for (const n of iconNames()) {
+      const v = String(n);
+      if (!kwv || v.indexOf(kwv) >= 0) out.push(v);
+    }
+    return out;
+  }
+  function pickIcon(n: string) {
+    $setState('bIcon', n);
+    backToEdit();
+  }
+
+  // ---- toolbar: import / export / reset ----
+  function openImport() {
+    $setState('impText', '');
+    openDlg('import', '导入按钮');
+  }
+  async function doImport() {
+    const r: any = await onCall('import_buttons', { data: impText() });
+    if (r && r.ok) {
+      await loadButtons();
+      onToast('已导入 ' + r.count + ' 个按钮', 'ok');
+      closeDlg();
+    } else onToast((r && r.error) || '导入失败', 'err');
+  }
+  async function doExport() {
+    const r: any = await onCall('export_buttons');
+    if (r && r.ok) {
+      onToast('已导出：' + r.path, 'ok');
+      await onCall('open_path', { path: r.path });
+    }
+  }
+  function askReset() { openDlg('resetBtns', '恢复默认按钮'); }
+  async function confirmReset() {
+    await onCall('reset_buttons');
+    await loadButtons();
+    onToast('已恢复默认', 'ok');
+    closeDlg();
+  }
+
+  // ---- drag & drop (edit mode only) ----
+  // Card rows sit inside nested {#each} blocks: an inline arrow there may not
+  // read the outer group variable, so ids/groups come off the DOM attrs
+  // (data-id / data-group) exactly like the original bindButtonsDnd did.
+  function rowAttr(e: any, name: string): string {
+    try {
+      const t = e.currentTarget;
+      return String(t.getAttribute(name) || '');
+    } catch (_err) { return ''; }
+  }
+  function onUbDragStart(e: any, id: string) {
+    if (!editMode()) return;
+    dragEl = e.currentTarget;
+    dragId = id;
+    dragGroup = rowAttr(e, 'data-group');
+    try {
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', id);
+    } catch (_err) { /* ignore */ }
+    try { e.currentTarget.classList.add('dragging'); } catch (_err2) { /* ignore */ }
+  }
+  function onUbDragEnd(e: any) {
+    try { e.currentTarget.classList.remove('dragging'); } catch (_err) { /* ignore */ }
+    dragEl = null;
+    dragId = '';
+    dragGroup = '';
+    try {
+      document.querySelectorAll('#btnGroups .btn-group-block').forEach((el) =>
+        el.classList.remove('drag-over'));
+    } catch (_err2) { /* ignore */ }
+  }
+  function onUbDragOver(e: any) {
+    if (!editMode() || !dragEl || dragEl === e.currentTarget) return;
+    if (dragGroup !== rowAttr(e, 'data-group')) return;
+    e.preventDefault();
+    const el = e.currentTarget;
+    const r = el.getBoundingClientRect();
+    const after = (e.clientY - r.top) > r.height / 2;
+    const parent = el.parentNode;
+    if (parent) parent.insertBefore(dragEl, after ? el.nextSibling : el);
+  }
+  function onUbDrop(e: any) {
+    e.preventDefault();
+    if (!editMode() || !dragEl || dragEl === e.currentTarget) return;
+    void persistButtonOrder(rowAttr(e, 'data-group'));
+  }
+  function onBlockDragOver(e: any) {
+    if (editMode() && dragId) {
+      e.preventDefault();
+      try { e.currentTarget.classList.add('drag-over'); } catch (_err) { /* ignore */ }
+    }
+  }
+  function onBlockDragLeave(e: any) {
+    try { e.currentTarget.classList.remove('drag-over'); } catch (_err) { /* ignore */ }
+  }
+  async function onBlockDrop(e: any, targetGroup: string) {
+    e.preventDefault();
+    if (!editMode() || !dragId) return;
+    try { e.currentTarget.classList.remove('drag-over'); } catch (_err) { /* ignore */ }
+    if (dragGroup === targetGroup) { await persistButtonOrder(targetGroup); return; }
+    const r: any = await onCall('set_button_group', {
+      button_id: dragId, group: targetGroup,
+    });
+    if (r && r.ok) {
+      if (r && Array.isArray(r.buttons)) $setState('list', r.buttons);
+      else await loadButtons();
+      onToast('已移动到「' + targetGroup + '」', 'ok');
+    } else onToast((r && r.error) || '移动失败', 'err');
+  }
+  async function persistButtonOrder(group: string) {
+    const ids: string[] = [];
+    try {
+      document.querySelectorAll('#btnGroups .btn-group-block').forEach((block) => {
+        if (block.getAttribute('data-group') !== group) return;
+        block.querySelectorAll('.ubtn').forEach((el) => {
+          const v = el.getAttribute('data-id');
+          if (v) ids.push(v);
+        });
+      });
+    } catch (_err) { /* ignore */ }
+    const r: any = await onCall('reorder_buttons', { ids: ids });
+    if (r && r.ok) {
+      if (r && Array.isArray(r.buttons)) $setState('list', r.buttons);
+      else await loadButtons();
+      onToast('已保存顺序', 'ok');
+    } else onToast((r && r.error) || '保存顺序失败', 'err');
+  }
+
+  // ---- data: on mount + whenever the active profile changes ----
+  $effect(() => {
+    const pid = (s && s().boot) ? String(s().boot.profile_id || '') : '';
+    if (pid === loadedPid) return;
+    loadedPid = pid;
+    void loadButtons();
+  });
+
+  // Esc (shell) resets this view's local dialog state so a later open is a
+  // real false -> true transition; the Dialog child keeps its own latch.
+  onMount(() => {
+    const __resetDlg = () => { $setState('dlg', { open: false, id: '', title: '' }); };
+    document.addEventListener('rosezm:dialog-reset', __resetDlg);
+    onCleanup(() => document.removeEventListener('rosezm:dialog-reset', __resetDlg));
+  });
+</script>
+
+    <section class="page " class:active={s && s().page==='buttons'} id="page-buttons">
+      <div class="page-head">
+        <h1 data-i18n="btn.title">常用功能</h1>
+        <p class="page-sub" data-i18n="btn.sub">把常用指令固化成按钮，点击即发</p>
+        <div class="head-actions">
+          <button class="ghost-btn" id="btnImport" on:click={openImport}>导入</button>
+          <button class="ghost-btn" id="btnExportBtns" on:click={doExport}>导出</button>
+          <button class="ghost-btn" id="btnResetBtns" on:click={askReset}>恢复默认</button>
+          <button class="primary-btn edit-only" id="btnAddBtn" on:click={addBtn}>+ 新建按钮</button>
+        </div>
+      </div>
+      <div id="btnGroups">
+        {#if loaded() && !groupList().length}
+          <div class="empty">还没有按钮，点击右上角「新建按钮」添加</div>
+        {/if}
+        {#if groupList().length}
+          {#each groupList() as g (g.name)}
+            <div class="btn-group-block" data-group={g.name}
+              on:dragover={onBlockDragOver} on:dragleave={onBlockDragLeave} on:drop={(e: any) => onBlockDrop(e, g.name)}>
+              <div class="group-title">
+                <span class="grip" draggable="false"><i class="lci" data-lucide="grip-vertical"></i></span>
+                {g.name} · {g.items.length}
+              </div>
+              <div class="btn-grid">
+                {#each g.items as r, i (r.b.id)}
+                  <div class="ubtn " class:running={r.running} draggable={editMode() ? 'true' : 'false'}
+                    data-id={r.b.id} data-group={g.name} data-color={r.b.color || 'blue'}
+                    style="animation-delay:{i * 40}ms"
+                    on:click={(e: any) => onUbClick(e, r.b.id)}
+                    on:dragstart={(e: any) => onUbDragStart(e, r.b.id)}
+                    on:dragend={onUbDragEnd}
+                    on:dragover={onUbDragOver}
+                    on:drop={onUbDrop}>
+                    <div class="ub-run"></div>
+                    <button class="pin-btn " class:pinned={pinned('button:'+r.b.id)} data-pinref={'button:' + r.b.id}
+                      title={() => pinned('button:'+r.b.id) ? '取消收藏' : '钉到首页快速操作'}
+                      on:click={(e: any) => pinClick(e, r.b.id)}><i class="lci" data-lucide="star"></i></button>
+                    <div class="ub-ico"><i class="lci" data-lucide={ico(r.b.icon || 'bolt')}></i></div>
+                    <div class="ub-name">{r.b.name}</div>
+                    <div class="ub-cmds" title={() => ubCmds(r.b)}>{ubCmds(r.b) || '（无指令）'}</div>
+                    <div class="ub-tools edit-only">
+                      <button data-act="edit" title="编辑" on:click={(e: any) => toolBtn(e, 'edit', r.b.id)}><i class="lci" data-lucide="pencil"></i></button>
+                      <button data-act="copy" title="复制" on:click={(e: any) => toolBtn(e, 'copy', r.b.id)}><i class="lci" data-lucide="copy"></i></button>
+                      <button data-act="up" title="上移" on:click={(e: any) => toolBtn(e, 'up', r.b.id)}><i class="lci" data-lucide="arrow-up"></i></button>
+                      <button data-act="down" title="下移" on:click={(e: any) => toolBtn(e, 'down', r.b.id)}><i class="lci" data-lucide="arrow-down"></i></button>
+                      <button data-act="del" title="删除" on:click={(e: any) => toolBtn(e, 'del', r.b.id)}><i class="lci" data-lucide="trash-2"></i></button>
+                    </div>
+                  </div>
+                {/each}
+              </div>
+            </div>
+          {/each}
+        {/if}
+      </div>
+    </section>
+
+    {#if dlg().open && dlg().id==='editBtn'}
+      <div class="modal-layer">
+        <div class="modal-backdrop" on:click={closeDlg}></div>
+        <div class="modal">
+          <div class="modal-head">
+            <h3>{dlg().title}</h3>
+            <button class="icon-btn" on:click={closeDlg}>✕</button>
+          </div>
+          <div class="modal-body">
+            <div class="form-grid">
+              <div class="field"><label>名称</label>
+                <input class="inp" id="bName" placeholder="例如：读取电量" bind:value={bName}></div>
+              <div class="field"><label>分组</label>
+                <select class="sel" id="bGroupPick" bind:value={bGroup} on:change={onGroupChange}
+                  style="display:{bGroup()==='__custom__' ? 'none' : ''}">
+                  {#each existingGroups() as g}
+                    <option value={g.id}>{g.name}</option>
+                  {/each}
+                  <option value="__custom__">＋ 自定义…</option>
+                </select>
+                <input class="inp" id="bGroupPickCustom" placeholder="输入新分组名称，回车确认"
+                  style="display:{bGroup()==='__custom__' ? '' : 'none'}" bind:value={bGroupCustom}></div>
+              <div class="field"><label>图标</label>
+                <button type="button" class="icon-pick-btn" id="bIcon" on:click={openIconPicker}>
+                  <i class="lci" data-lucide={ico(bIcon())}></i></button> <span class="hint" id="bIconName">{bIcon()}</span></div>
+              <div class="field"><label>颜色</label>
+                <select class="sel" id="bColor" bind:value={bColor}>
+                  {#each COLOR_CHOICES as cc (cc.v)}
+                    <option value={cc.v}>{cc.n}</option>
+                  {/each}
+                </select></div>
+              <div class="field"><label>指令间隔（秒）</label>
+                <input class="inp" id="bDelay" type="number" step="0.05" min="0" bind:value={bDelay}></div>
+              <div class="field"><label>备注</label>
+                <input class="inp" id="bNote" bind:value={bNote}></div>
+            </div>
+            <div class="field" style="margin-top:12px"><label>指令序列（每行一条，支持 {'{变量}'} 占位符）</label>
+              <textarea class="inp" id="bCmds" rows="5" placeholder="AT+VER=?&#10;AT+BAT=?" bind:value={bCmds}></textarea>
+              <span class="hint">常用变量：{'{port}'} {'{payload}'} {'{deui}'}，执行时可在调用处传入</span></div>
+          </div>
+          <div class="modal-foot">
+            <button class="ghost-btn" on:click={closeDlg}>取消</button>
+            <button class="primary-btn" on:click={saveBtn}>保存</button>
+          </div>
+        </div>
+      </div>
+    {/if}
+
+    {#if dlg().open && dlg().id==='iconPick'}
+      <div class="modal-layer">
+        <div class="modal-backdrop" on:click={backToEdit}></div>
+        <div class="modal">
+          <div class="modal-head">
+            <h3>{dlg().title}</h3>
+            <button class="icon-btn" on:click={backToEdit}>✕</button>
+          </div>
+          <div class="modal-body">
+            <div class="icon-picker">
+              <input class="inp" id="ipSearch" placeholder="搜索图标，如 battery / wifi / rocket" bind:value={ipKw}>
+              <div class="icon-grid" id="ipGrid">
+                {#each ipFiltered() as n}
+                  <button type="button" class="ic-cell " class:on={n===bIcon()} data-n={n} title={() => n}
+                    on:click={() => pickIcon(n)}>
+                    <i class="lci" data-lucide={n}></i><span>{n}</span>
+                  </button>
+                {/each}
+              </div>
+            </div>
+          </div>
+          <div class="modal-foot">
+            <button class="ghost-btn" on:click={backToEdit}>取消</button>
+          </div>
+        </div>
+      </div>
+    {/if}
+
+    {#if dlg().open && dlg().id==='delBtn'}
+      <div class="modal-layer">
+        <div class="modal-backdrop" on:click={closeDlg}></div>
+        <div class="modal">
+          <div class="modal-head">
+            <h3>{dlg().title}</h3>
+            <button class="icon-btn" on:click={closeDlg}>✕</button>
+          </div>
+          <div class="modal-body">
+            <p>确定删除「{delBtnText()}」？</p>
+          </div>
+          <div class="modal-foot">
+            <button class="ghost-btn" on:click={closeDlg}>取消</button>
+            <button class="primary-btn" on:click={confirmDeleteBtn}>删除</button>
+          </div>
+        </div>
+      </div>
+    {/if}
+
+    {#if dlg().open && dlg().id==='import'}
+      <div class="modal-layer">
+        <div class="modal-backdrop" on:click={closeDlg}></div>
+        <div class="modal">
+          <div class="modal-head">
+            <h3>{dlg().title}</h3>
+            <button class="icon-btn" on:click={closeDlg}>✕</button>
+          </div>
+          <div class="modal-body">
+            <div class="field"><label>粘贴按钮 JSON 内容</label>
+              <textarea class="inp" id="impText" rows="8" placeholder={'{"buttons":[...]}'} bind:value={impText}></textarea>
+              <span class="hint">可通过「导出」得到同样格式的文件，复制内容粘贴到这里</span></div>
+          </div>
+          <div class="modal-foot">
+            <button class="ghost-btn" on:click={closeDlg}>取消</button>
+            <button class="primary-btn" on:click={doImport}>导入</button>
+          </div>
+        </div>
+      </div>
+    {/if}
+
+    {#if dlg().open && dlg().id==='resetBtns'}
+      <div class="modal-layer">
+        <div class="modal-backdrop" on:click={closeDlg}></div>
+        <div class="modal">
+          <div class="modal-head">
+            <h3>{dlg().title}</h3>
+            <button class="icon-btn" on:click={closeDlg}>✕</button>
+          </div>
+          <div class="modal-body">
+            <p>将清空自定义按钮并恢复内置 5 个，确定？</p>
+          </div>
+          <div class="modal-foot">
+            <button class="ghost-btn" on:click={closeDlg}>取消</button>
+            <button class="primary-btn" on:click={confirmReset}>确定</button>
+          </div>
+        </div>
+      </div>
+    {/if}

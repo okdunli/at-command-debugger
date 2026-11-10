@@ -1,0 +1,1051 @@
+<script>
+  // SettingsView - 1:1 port of index.html #page-settings + the matching app.js logic.
+  // Contract (see docs/contract.md): s/onSet/onCall/onToast/onGoto props.
+  // Read global state as s().key (the s prop is a live getter - call it: s().config);
+  // write via onSet('key', value); plain function props stay plain (onCall/onSet/onToast/onGoto).
+  // backend via await onCall('method', args); toasts via onToast(msg, type).
+  export let s = null as any;
+  export let onSet = null as any;
+  export let onCall = null as any;
+  export let onToast = null as any;
+  export let onGoto = null as any;
+
+  // ---- view-local state (bind: targets; seeded from s().config / s().boot below) ----
+  let tab = $state('conn');
+
+  // tab conn: #formSerial / #formProtocol (CFG_MAP: section+field+type per key)
+  let serBaud = $state<number | null>(null);
+  let serBs = $state('');
+  let serPar = $state('');
+  let serSb = $state('');
+  let serFc = $state('');
+  let serTo = $state<number | null>(null);
+  let serAuto = $state(false);
+  let proLe = $state('');
+  let proDelay = $state<number | null>(null);
+  let proTo = $state<number | null>(null);
+  let proEcho = $state(false);
+
+  // tab ui: #formUI / #formBehavior
+  let uiTheme = $state('');
+  let uiAccent = $state('');
+  let accentCustom = $state('');
+  let accentPick = $state('#58a6ff');
+  let uiOpacity = $state(100);
+  let winTop = $state(false);
+  let uiFs = $state<number | null>(null);
+  let uiScale = $state('');
+  let uiAnim = $state(true);
+  let uiScroll = $state(true);
+  let uiTs = $state(true);
+  let behHist = $state(true);
+  let behHistmax = $state<number | null>(null);
+  let behHttp = $state(false);
+  let behPort = $state<number | null>(null);
+  let behConfirm = $state(false);
+  let behAutoconn = $state(false);
+
+  // tab profile: pickers / edit mode / dialogs / meta
+  // profileSel is deliberately the same signal the shell titlebar picker binds, so
+  // both selects stay in sync exactly like the original renderProfilePickers().
+  let profileSel = $state('');
+  let editMode = $state(false);
+  let npId = $state('');
+  let npName = $state('');
+  let npBrand = $state('');
+  let npSub = $state('');
+  let npBase = $state('');
+  let dpId = $state('');
+  let dpName = $state('');
+  let ipJson = $state('');
+  let ipId = $state('');
+  let metaVersion = $state('');
+  let metaAuthor = $state('');
+  let metaDate = $state('');
+  let metaWebsite = $state('');
+  let metaIntro = $state('');
+  // shared singleton-modal shape per contract (dlg.id discriminates the dialog)
+  let dlg = $state<any>({ open: false, id: '', title: '' });
+
+  // tab data: window / diagnostics
+  let winSize = $state('');
+  let stOpen = $state(false);
+  let stRunning = $state(false);
+  let stChecks = $state<any[]>([]);
+
+  // render-time seed guards: config/boot object identity (read only in this script)
+  let seededCfg = $state<any>(null);
+  let seededBoot = $state<any>(null);
+
+  // live opacity throttle timestamp (element-scoped in the original -> resets on rerender)
+  let opacLast = 0;
+
+  const IMP_JSON_PH = '{"kind":"at-command-debugger-profile","profile":{...}}';
+
+  // ---- helpers ----
+  function cfgObj(): any { return (s && s().config) || null; }
+  function bootObj(): any { return (s && s().boot) || null; }
+  function numOrNull(v: any): number | null {
+    if (v === null || v === undefined || v === '') return null;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  }
+  function selStr(v: any): string { return (v === null || v === undefined) ? '' : String(v); }
+
+  function seedCfg(c: any): void {
+    if (!c) return;
+    const ser = c.serial || {};
+    const pro = c.protocol || {};
+    const ui = c.ui || {};
+    const beh = c.behavior || {};
+    const win = c.window || {};
+
+    const vBaud = numOrNull(ser.baudrate);
+    if (serBaud() !== vBaud) $setState('serBaud', vBaud);
+    const vBs = selStr(ser.bytesize);
+    if (serBs() !== vBs) $setState('serBs', vBs);
+    const vPar = selStr(ser.parity);
+    if (serPar() !== vPar) $setState('serPar', vPar);
+    const vSb = selStr(ser.stopbits);
+    if (serSb() !== vSb) $setState('serSb', vSb);
+    const vFc = selStr(ser.flowcontrol);
+    if (serFc() !== vFc) $setState('serFc', vFc);
+    const vTo = numOrNull(ser.timeout);
+    if (serTo() !== vTo) $setState('serTo', vTo);
+    const vAuto = !!ser.auto_reconnect;
+    if (serAuto() !== vAuto) $setState('serAuto', vAuto);
+
+    const vLe = selStr(pro.line_ending);
+    if (proLe() !== vLe) $setState('proLe', vLe);
+    const vDelay = numOrNull(pro.command_delay);
+    if (proDelay() !== vDelay) $setState('proDelay', vDelay);
+    const vProTo = numOrNull(pro.read_timeout);
+    if (proTo() !== vProTo) $setState('proTo', vProTo);
+    const vEcho = !!pro.strip_echo;
+    if (proEcho() !== vEcho) $setState('proEcho', vEcho);
+
+    const vTheme = selStr(ui.theme);
+    if (uiTheme() !== vTheme) $setState('uiTheme', vTheme);
+    const vAccent = selStr(ui.accent);
+    if (uiAccent() !== vAccent) $setState('uiAccent', vAccent);
+    const hex = String(ui.accent_custom || '').trim();
+    if (accentCustom() !== hex) $setState('accentCustom', hex);
+    const pick = /^#[0-9a-fA-F]{6}$/.test(hex) ? hex : '#58a6ff';
+    if (accentPick() !== pick) $setState('accentPick', pick);
+    // fieldRange: NaN -> 100, clamp 40..100
+    let vOpac = parseFloat(String(ui.window_opacity));
+    if (!Number.isFinite(vOpac)) vOpac = 100;
+    vOpac = Math.max(40, Math.min(100, vOpac));
+    if (uiOpacity() !== vOpac) $setState('uiOpacity', vOpac);
+    const vTop = !!win.topmost;
+    if (winTop() !== vTop) $setState('winTop', vTop);
+    const vFs = numOrNull(ui.font_size);
+    if (uiFs() !== vFs) $setState('uiFs', vFs);
+    const vScale = selStr(ui.ui_scale);
+    if (uiScale() !== vScale) $setState('uiScale', vScale);
+    // fieldBool: val truthy -> checked (undefined -> false)
+    const vAnim = !!ui.animation;
+    if (uiAnim() !== vAnim) $setState('uiAnim', vAnim);
+    const vScroll = !!ui.auto_scroll;
+    if (uiScroll() !== vScroll) $setState('uiScroll', vScroll);
+    const vTs = !!ui.timestamps;
+    if (uiTs() !== vTs) $setState('uiTs', vTs);
+
+    const vHist = !!beh.save_history;
+    if (behHist() !== vHist) $setState('behHist', vHist);
+    const vHistmax = numOrNull(beh.history_limit);
+    if (behHistmax() !== vHistmax) $setState('behHistmax', vHistmax);
+    const vHttp = !!beh.http_server;
+    if (behHttp() !== vHttp) $setState('behHttp', vHttp);
+    const vPort = numOrNull(beh.http_port);
+    if (behPort() !== vPort) $setState('behPort', vPort);
+    const vConfirm = !!beh.confirm_before_run;
+    if (behConfirm() !== vConfirm) $setState('behConfirm', vConfirm);
+    const vAutoconn = !!beh.auto_connect;
+    if (behAutoconn() !== vAutoconn) $setState('behAutoconn', vAutoconn);
+  }
+
+  function seedBoot(b: any): void {
+    if (!b) return;
+    const pid = String(b.profile_id || '');
+    if (profileSel() !== pid) $setState('profileSel', pid);
+    const em = !!b.edit_mode;
+    if (editMode() !== em) $setState('editMode', em);
+    const mv = String(b.profile_version || '');
+    if (metaVersion() !== mv) $setState('metaVersion', mv);
+    const ma = String(b.profile_author || '');
+    if (metaAuthor() !== ma) $setState('metaAuthor', ma);
+    const md = String(b.profile_release_date || '');
+    if (metaDate() !== md) $setState('metaDate', md);
+    const mw = String(b.profile_website || '');
+    if (metaWebsite() !== mw) $setState('metaWebsite', mw);
+    const mi = String(b.profile_intro || '');
+    if (metaIntro() !== mi) $setState('metaIntro', mi);
+  }
+
+  // Render-time seeding (script runs on every render with fresh props): sync mirrors
+  // exactly when config/boot identity changes - the port of syncSerialUI/bindProfileMeta.
+  const _cfg0 = cfgObj();
+  if (_cfg0 && _cfg0 !== seededCfg()) { $setState('seededCfg', _cfg0); seedCfg(_cfg0); }
+  const _boot0 = bootObj();
+  if (_boot0 && _boot0 !== seededBoot()) { $setState('seededBoot', _boot0); seedBoot(_boot0); }
+
+  // ---- settings save flow (CFG_MAP -> save_config patch + side effects) ----
+  async function saveCfg(section: string, field: string, value: any): Promise<void> {
+    const patch: any = {};
+    patch[section] = {};
+    patch[section][field] = value;
+    const r: any = await onCall('save_config', { patch: patch });
+    if (r && r.config) {
+      onSet('config', r.config);
+      const sa = r.serial_applied;
+      if (sa) {
+        if (sa.ok) onToast('串口参数已应用，已自动重连', 'ok');
+        else onToast('串口参数应用失败：' + (sa.error || '未知错误'), 'err');
+      }
+      if (section === 'ui' && field === 'window_opacity') {
+        void onCall('set_window_opacity', { percent: value });
+      }
+      if (section === 'window' && field === 'topmost') {
+        void onCall('set_topmost', { on: value, save: false });
+      }
+    }
+  }
+
+  // NOTE: on every control the on:change/on:input handler is written BEFORE bind: so
+  // its data-on-* attribute wins the single-handler-per-element slot; the handler
+  // itself writes the mirror ($setState) and then runs the save flow.
+
+  // ---- tab conn ----
+  function onSerBaud(e: any): void {
+    const raw = parseFloat(String(e && e.target ? e.target.value : ''));
+    const v = Number.isFinite(raw) ? raw : null;
+    $setState('serBaud', v);
+    void saveCfg('serial', 'baudrate', v);
+  }
+  function onSerBs(e: any): void {
+    const v = String(e && e.target ? e.target.value : '');
+    $setState('serBs', v);
+    const n = parseFloat(v);
+    void saveCfg('serial', 'bytesize', Number.isFinite(n) ? n : null);
+  }
+  function onSerPar(e: any): void {
+    const v = String(e && e.target ? e.target.value : '');
+    $setState('serPar', v);
+    void saveCfg('serial', 'parity', v);
+  }
+  function onSerSb(e: any): void {
+    const v = String(e && e.target ? e.target.value : '');
+    $setState('serSb', v);
+    const n = parseFloat(v);
+    void saveCfg('serial', 'stopbits', Number.isFinite(n) ? n : null);
+  }
+  function onSerFc(e: any): void {
+    const v = String(e && e.target ? e.target.value : '');
+    $setState('serFc', v);
+    void saveCfg('serial', 'flowcontrol', v);
+  }
+  function onSerTo(e: any): void {
+    const raw = parseFloat(String(e && e.target ? e.target.value : ''));
+    const v = Number.isFinite(raw) ? raw : null;
+    $setState('serTo', v);
+    void saveCfg('serial', 'timeout', v);
+  }
+  function onSerAuto(e: any): void {
+    const v = !!(e && e.target && e.target.checked);
+    $setState('serAuto', v);
+    void saveCfg('serial', 'auto_reconnect', v);
+  }
+  function onProLe(e: any): void {
+    const v = String(e && e.target ? e.target.value : '');
+    $setState('proLe', v);
+    void saveCfg('protocol', 'line_ending', v);
+  }
+  function onProDelay(e: any): void {
+    const raw = parseFloat(String(e && e.target ? e.target.value : ''));
+    const v = Number.isFinite(raw) ? raw : null;
+    $setState('proDelay', v);
+    void saveCfg('protocol', 'command_delay', v);
+  }
+  function onProTo(e: any): void {
+    const raw = parseFloat(String(e && e.target ? e.target.value : ''));
+    const v = Number.isFinite(raw) ? raw : null;
+    $setState('proTo', v);
+    void saveCfg('protocol', 'read_timeout', v);
+  }
+  function onProEcho(e: any): void {
+    const v = !!(e && e.target && e.target.checked);
+    $setState('proEcho', v);
+    void saveCfg('protocol', 'strip_echo', v);
+  }
+
+  // ---- tab ui / behavior ----
+  function onUiTheme(e: any): void {
+    const v = String(e && e.target ? e.target.value : '');
+    $setState('uiTheme', v);
+    void saveCfg('ui', 'theme', v);
+  }
+  function onUiAccent(e: any): void {
+    const v = String(e && e.target ? e.target.value : '');
+    $setState('uiAccent', v);
+    void saveCfg('ui', 'accent', v);
+  }
+  function onAccentCustom(e: any): void {
+    const v = String(e && e.target ? e.target.value : '');
+    $setState('accentCustom', v);
+    void saveCfg('ui', 'accent_custom', v);
+  }
+  async function onAccentPick(e: any): Promise<void> {
+    const hex = String(e && e.target ? e.target.value : '').toUpperCase();
+    $setState('accentPick', hex);
+    $setState('accentCustom', hex);
+    await saveCfg('ui', 'accent_custom', hex);
+  }
+  function onOpacInput(e: any): void {
+    const t = e && e.target;
+    let v = t ? Number(t.valueAsNumber) : NaN;
+    if (!Number.isFinite(v)) v = 100;
+    v = Math.max(40, Math.min(100, v));
+    $setState('uiOpacity', v);
+    const now = Date.now();
+    if (now - opacLast >= 40) {
+      opacLast = now;
+      void onCall('set_window_opacity', { percent: v });
+    }
+  }
+  function onOpacChange(e: any): void {
+    const t = e && e.target;
+    let v = t ? Number(t.valueAsNumber) : NaN;
+    if (!Number.isFinite(v)) v = 100;
+    v = Math.max(40, Math.min(100, v));
+    $setState('uiOpacity', v);
+    void saveCfg('ui', 'window_opacity', v);
+  }
+  function onWinTop(e: any): void {
+    const v = !!(e && e.target && e.target.checked);
+    $setState('winTop', v);
+    void saveCfg('window', 'topmost', v);
+  }
+  function onUiFs(e: any): void {
+    const raw = parseFloat(String(e && e.target ? e.target.value : ''));
+    const v = Number.isFinite(raw) ? raw : null;
+    $setState('uiFs', v);
+    void saveCfg('ui', 'font_size', v);
+  }
+  function onUiScale(e: any): void {
+    const v = String(e && e.target ? e.target.value : '');
+    $setState('uiScale', v);
+    const n = parseFloat(v);
+    void saveCfg('ui', 'ui_scale', Number.isFinite(n) ? n : null);
+  }
+  function onUiAnim(e: any): void {
+    const v = !!(e && e.target && e.target.checked);
+    $setState('uiAnim', v);
+    void saveCfg('ui', 'animation', v);
+  }
+  function onUiScroll(e: any): void {
+    const v = !!(e && e.target && e.target.checked);
+    $setState('uiScroll', v);
+    void saveCfg('ui', 'auto_scroll', v);
+  }
+  function onUiTs(e: any): void {
+    const v = !!(e && e.target && e.target.checked);
+    $setState('uiTs', v);
+    void saveCfg('ui', 'timestamps', v);
+  }
+  function onBehHist(e: any): void {
+    const v = !!(e && e.target && e.target.checked);
+    $setState('behHist', v);
+    void saveCfg('behavior', 'save_history', v);
+  }
+  function onBehHistmax(e: any): void {
+    const raw = parseFloat(String(e && e.target ? e.target.value : ''));
+    const v = Number.isFinite(raw) ? raw : null;
+    $setState('behHistmax', v);
+    void saveCfg('behavior', 'history_limit', v);
+  }
+  function onBehHttp(e: any): void {
+    const v = !!(e && e.target && e.target.checked);
+    $setState('behHttp', v);
+    void saveCfg('behavior', 'http_server', v);
+  }
+  function onBehPort(e: any): void {
+    const raw = parseFloat(String(e && e.target ? e.target.value : ''));
+    const v = Number.isFinite(raw) ? raw : null;
+    $setState('behPort', v);
+    void saveCfg('behavior', 'http_port', v);
+  }
+  function onBehConfirm(e: any): void {
+    const v = !!(e && e.target && e.target.checked);
+    $setState('behConfirm', v);
+    void saveCfg('behavior', 'confirm_before_run', v);
+  }
+  function onBehAutoconn(e: any): void {
+    const v = !!(e && e.target && e.target.checked);
+    $setState('behAutoconn', v);
+    void saveCfg('behavior', 'auto_connect', v);
+  }
+
+  // ---- settings tabs (bindSettingsTabs) ----
+  function setTabConn(): void { $setState('tab', 'conn'); }
+  function setTabUi(): void { $setState('tab', 'ui'); }
+  function setTabProfile(): void { $setState('tab', 'profile'); }
+  function setTabData(): void { $setState('tab', 'data'); }
+
+  // ---- profile tab ----
+  function profiles(): any[] {
+    const b = bootObj();
+    return b && Array.isArray(b.profiles) ? b.profiles : [];
+  }
+  function curProfileId(): string {
+    const b = bootObj();
+    return String((b && b.profile_id) || '');
+  }
+  function curProfile(): any {
+    const id = curProfileId();
+    const list = profiles();
+    for (const p of list) { if (p && p.id === id) return p; }
+    return {};
+  }
+  function profileHint(): string {
+    return curProfile().source === 'user'
+      ? '用户配置集（可编辑、可删除）'
+      : '内置配置集（可直接编辑，也可复制为自定义）';
+  }
+  function profileCountText(): string { return profiles().length + ' 个配置集'; }
+  function profileDirText(): string {
+    const b = bootObj();
+    return '配置集目录：' + String((b && b.profiles_dir) || '-');
+  }
+  function dataDirText(): string {
+    const b = bootObj();
+    return '数据目录：' + String((b && b.data_dir) || '-');
+  }
+
+  async function reboot(): Promise<void> {
+    const data: any = await onCall('get_boot');
+    if (data) {
+      onSet('boot', data);
+      if (data.config) onSet('config', data.config);
+    }
+  }
+
+  // original switchProfile: same-id no-op, running guard, switch, reload, toast
+  async function switchProfile(id: string): Promise<void> {
+    if (!id || id === curProfileId()) return;
+    if (s && s().running) {
+      onToast('任务执行中，暂不能切换配置集', 'warn');
+      $setState('profileSel', curProfileId());
+      return;
+    }
+    const r: any = await onCall('switch_profile', { profile_id: id });
+    if (r && r.ok) {
+      await reboot();
+      onToast('已切换到「' + ((r.profile && r.profile.name) || id) + '」', 'ok');
+    } else {
+      onToast((r && r.error) || '切换失败', 'err');
+      $setState('profileSel', curProfileId());
+    }
+  }
+  function onProfileSelChange(e: any): void {
+    const v = String(e && e.target ? e.target.value : '');
+    $setState('profileSel', v);
+    void switchProfile(v);
+  }
+
+  function onEditModeChange(e: any): void {
+    const v = !!(e && e.target && e.target.checked);
+    $setState('editMode', v);
+    void (async () => {
+      const r: any = await onCall('save_config', { patch: { profile: { edit_mode: v } } });
+      if (r && r.config) onSet('config', r.config);
+      const b = bootObj() || {};
+      onSet('boot', { ...b, edit_mode: v });
+      onToast(v ? '已开启编辑：可新增 / 修改 / 删除'
+        : '已关闭编辑：隐藏全部编辑按钮', 'ok');
+    })();
+  }
+
+  function closeDlg(): void { $setState('dlg', { open: false, id: '', title: '' });
+    try { document.dispatchEvent(new CustomEvent('rosezm:dialog-sync')); } catch (e) { /* noop */ } }
+  function openNewProfile(): void {
+    $setState('npId', ''); $setState('npName', ''); $setState('npBrand', '');
+    $setState('npSub', ''); $setState('npBase', '');
+    $setState('dlg', { open: true, id: 'newProfile', title: '新建配置集' });
+    try { document.dispatchEvent(new CustomEvent('rosezm:dialog-sync', { detail: { reopen: true, key: 'settings' } })); } catch (e) { /* noop */ }
+  }
+  function openDupProfile(): void {
+    const cur = curProfile();
+    $setState('dpId', String((cur.id || '') + '-copy'));
+    $setState('dpName', String((cur.name || '') + ' 副本'));
+    $setState('dlg', { open: true, id: 'dupProfile', title: '复制当前配置集' });
+    try { document.dispatchEvent(new CustomEvent('rosezm:dialog-sync', { detail: { reopen: true, key: 'settings' } })); } catch (e) { /* noop */ }
+  }
+  function openImportProfile(): void {
+    $setState('ipJson', ''); $setState('ipId', '');
+    $setState('dlg', { open: true, id: 'importProfile', title: '导入配置集' });
+    try { document.dispatchEvent(new CustomEvent('rosezm:dialog-sync', { detail: { reopen: true, key: 'settings' } })); } catch (e) { /* noop */ }
+  }
+  function openDeleteProfile(): void {
+    const cur = curProfile();
+    if (cur.source !== 'user') {
+      onToast('内置配置集不可删除，可先「复制当前」再改', 'warn');
+      return;
+    }
+    $setState('dlg', { open: true, id: 'delProfile', title: '删除配置集' });
+    try { document.dispatchEvent(new CustomEvent('rosezm:dialog-sync', { detail: { reopen: true, key: 'settings' } })); } catch (e) { /* noop */ }
+  }
+  function openResetCfg(): void {
+    $setState('dlg', { open: true, id: 'resetCfg', title: '恢复默认设置' });
+    try { document.dispatchEvent(new CustomEvent('rosezm:dialog-sync', { detail: { reopen: true, key: 'settings' } })); } catch (e) { /* noop */ }
+  }
+
+  async function confirmNewProfile(): Promise<void> {
+    const id = String(npId() || '').trim().toLowerCase();
+    if (!id) { onToast('请填写标识', 'warn'); return; }
+    if (!/^[a-z0-9][a-z0-9_-]*$/.test(id)) {
+      onToast('标识只能是小写字母/数字/-/_，且以字母数字开头', 'err');
+      return;
+    }
+    const r: any = await onCall('new_profile', {
+      profile_id: id,
+      name: String(npName() || '').trim(),
+      brand: String(npBrand() || '').trim(),
+      subtitle: String(npSub() || '').trim(),
+      base: String(npBase() || ''),
+    });
+    if (!r || !r.ok) { onToast((r && r.error) || '创建失败', 'err'); return; }
+    await switchProfile(id);
+    closeDlg();
+  }
+
+  async function confirmDupProfile(): Promise<void> {
+    const id = String(dpId() || '').trim().toLowerCase();
+    if (!id) { onToast('请填写标识', 'warn'); return; }
+    const r: any = await onCall('duplicate_profile', {
+      profile_id: curProfileId(),
+      new_id: id,
+      new_name: String(dpName() || '').trim(),
+    });
+    if (!r || !r.ok) { onToast((r && r.error) || '复制失败', 'err'); return; }
+    await switchProfile(id);
+    closeDlg();
+  }
+
+  async function confirmImportProfile(): Promise<void> {
+    const text = String(ipJson() || '').trim();
+    if (!text) { onToast('请粘贴 JSON 内容', 'warn'); return; }
+    const r: any = await onCall('import_profile', {
+      data: text,
+      override_id: String(ipId() || '').trim().toLowerCase(),
+    });
+    if (!r || !r.ok) { onToast((r && r.error) || '导入失败', 'err'); return; }
+    if (Array.isArray(r.profiles)) {
+      const b = bootObj() || {};
+      onSet('boot', { ...b, profiles: r.profiles });
+    }
+    onToast('已导入「' + ((r.profile && r.profile.name) || '') + '」', 'ok');
+    closeDlg();
+  }
+
+  async function exportCurrentProfile(): Promise<void> {
+    const r: any = await onCall('export_profile', { profile_id: curProfileId() });
+    if (r && r.ok) {
+      onToast('已导出：' + r.path, 'ok');
+      await onCall('open_path', { path: r.path });
+    } else onToast((r && r.error) || '导出失败', 'err');
+  }
+
+  async function openProfilesDir(): Promise<void> {
+    const r: any = await onCall('open_profiles_dir');
+    onToast(r && r.ok ? '已打开配置集目录' : ((r && r.path) || '打开失败'), 'info');
+  }
+
+  async function confirmDeleteProfile(): Promise<void> {
+    const r: any = await onCall('delete_profile', { profile_id: curProfileId() });
+    if (!r || !r.ok) { onToast((r && r.error) || '删除失败', 'err'); return; }
+    const arr = Array.isArray(r.profiles) ? r.profiles : [];
+    const fallback = (arr[0] && arr[0].id) || '';
+    if (fallback) await switchProfile(fallback);
+    else await reboot();
+    onToast('已删除', 'ok');
+    closeDlg();
+  }
+
+  async function saveMeta(): Promise<void> {
+    const meta = {
+      version: String(metaVersion() || '').trim(),
+      author: String(metaAuthor() || '').trim(),
+      release_date: String(metaDate() || '').trim(),
+      website: String(metaWebsite() || '').trim(),
+      intro: String(metaIntro() || '').trim(),
+    };
+    const r: any = await onCall('update_profile_meta', { meta: meta });
+    if (!r || !r.ok) { onToast((r && r.error) || '保存失败', 'err'); return; }
+    const b: any = {
+      ...(bootObj() || {}),
+      profile_version: meta.version,
+      profile_author: meta.author,
+      profile_release_date: meta.release_date,
+      profile_website: meta.website,
+      profile_intro: meta.intro,
+    };
+    if (b.home) b.home = { ...b.home, intro: meta.intro };
+    onSet('boot', b);
+    onToast('已保存配置集信息', 'ok');
+  }
+
+  // ---- data tab: window presets / folders / selftest / reset ----
+  async function refreshWinSize(): Promise<void> {
+    const r: any = await onCall('get_window_rect');
+    if (r && r.ok) {
+      $setState('winSize', '当前窗口：' + r.width + ' × ' + r.height +
+        '　位置 (' + r.x + ', ' + r.y + ')');
+    } else {
+      $setState('winSize', '浏览器模式：窗口大小由浏览器窗口决定（可用 F11 全屏）');
+    }
+  }
+  async function winSet(w: number, h: number): Promise<void> {
+    const r: any = await onCall('resize_window', { width: w, height: h, fix_point: 'se' });
+    if (r && r.ok) await onCall('commit_window_state');
+    else onToast((r && r.error) || '浏览器模式下不可用', 'err');
+    await refreshWinSize();
+  }
+  async function winMax(): Promise<void> {
+    const r: any = await onCall('toggle_maximize');
+    if (!r || !r.ok) onToast((r && r.error) || '浏览器模式下不可用', 'err');
+    await refreshWinSize();
+  }
+  async function openDataFolder(): Promise<void> {
+    const r: any = await onCall('open_data_folder');
+    onToast(r && r.ok ? '已打开数据目录' : r.path, 'info');
+  }
+  async function openLogsFolder(): Promise<void> {
+    const r: any = await onCall('open_logs_folder');
+    if (!r || !r.ok) onToast((r && r.error) || '打开失败', 'err');
+  }
+  async function runSelfTest(): Promise<void> {
+    $setState('stOpen', true);
+    $setState('stRunning', true);
+    $setState('stChecks', []);
+    const r: any = await onCall('selftest');
+    const checks = r && Array.isArray(r.checks) ? r.checks : [];
+    $setState('stChecks', checks);
+    $setState('stRunning', false);
+    onToast(r && r.ok ? '自检全部通过' : '自检存在失败项', r && r.ok ? 'ok' : 'warn');
+  }
+  async function confirmResetCfg(): Promise<void> {
+    const r: any = await onCall('reset_config');
+    if (r && r.config) onSet('config', r.config);
+    onToast('已恢复默认设置', 'ok');
+    closeDlg();
+  }
+
+  // Esc closes the active modal (the original global Esc handler's last step)
+  function onSettingsKey(e: any): void {
+    if (e && e.key === 'Escape' && dlg().open) closeDlg();
+  }
+
+  onMount(() => {
+    const __resetDlg = () => { $setState('dlg', { open: false, id: '', title: '' }); };
+    document.addEventListener('rosezm:dialog-reset', __resetDlg);
+    onCleanup(() => document.removeEventListener('rosezm:dialog-reset', __resetDlg));
+
+    document.addEventListener('keydown', onSettingsKey);
+    void refreshWinSize();
+  });
+  onCleanup(() => {
+    document.removeEventListener('keydown', onSettingsKey);
+  });
+</script>
+
+    <section class="page " class:active={s && s().page==='settings'} id="page-settings">
+      <div class="page-head">
+        <h1 data-i18n="set.title">设置</h1>
+        <p class="page-sub" data-i18n="set.sub">串口参数、界面偏好与行为开关</p>
+      </div>
+      <div class="set-tabs" id="setTabs">
+        <button class="set-tab" class:active={tab()==='conn'} on:click={setTabConn}>串口与协议</button>
+        <button class="set-tab" class:active={tab()==='ui'} on:click={setTabUi}>界面与行为</button>
+        <button class="set-tab" class:active={tab()==='profile'} on:click={setTabProfile}>配置集（OEM）</button>
+        <button class="set-tab" class:active={tab()==='data'} on:click={setTabData}>数据与窗口</button>
+      </div>
+      {#if tab()==='conn'}
+      <div class="set-page active" data-tabpage="conn">
+      <div class="two-col">
+        <div class="panel">
+          <div class="panel-head"><h3 data-i18n="set.serial">串口参数</h3></div>
+          <div class="form-grid" id="formSerial">
+            <div class="field"><label>波特率</label>
+              <input class="inp" type="number" data-cfg="ser_baud" min="110" max="6000000"
+                on:change={onSerBaud} bind:value={serBaud}></div>
+            <div class="field"><label>数据位</label>
+              <select class="sel" data-cfg="ser_bs" on:change={onSerBs} bind:value={serBs}>
+                <option value="5">5</option>
+                <option value="6">6</option>
+                <option value="7">7</option>
+                <option value="8">8</option>
+              </select></div>
+            <div class="field"><label>校验位</label>
+              <select class="sel" data-cfg="ser_par" on:change={onSerPar} bind:value={serPar}>
+                <option value="N">N</option>
+                <option value="E">E</option>
+                <option value="O">O</option>
+                <option value="M">M</option>
+                <option value="S">S</option>
+              </select></div>
+            <div class="field"><label>停止位</label>
+              <select class="sel" data-cfg="ser_sb" on:change={onSerSb} bind:value={serSb}>
+                <option value="1">1</option>
+                <option value="1.5">1.5</option>
+                <option value="2">2</option>
+              </select></div>
+            <div class="field"><label>流控</label>
+              <select class="sel" data-cfg="ser_fc" on:change={onSerFc} bind:value={serFc}>
+                <option value="none">无</option>
+                <option value="rtscts">RTS/CTS</option>
+                <option value="xonxoff">XON/XOFF</option>
+              </select></div>
+            <div class="field"><label>读超时（秒）</label>
+              <input class="inp" type="number" data-cfg="ser_to" min="0.1" max="30" step="any"
+                on:change={onSerTo} bind:value={serTo}></div>
+            <div class="field"><label>断线自动重连</label>
+              <label class="switch"><input type="checkbox" data-cfg="ser_auto"
+                on:change={onSerAuto} bind:checked={serAuto}><span>启用</span></label></div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><h3 data-i18n="set.protocol">协议参数</h3></div>
+          <div class="form-grid" id="formProtocol">
+            <div class="field"><label>行结束符</label>
+              <select class="sel" data-cfg="pro_le" on:change={onProLe} bind:value={proLe}>
+                <option value="CRLF">CRLF</option>
+                <option value="CR">CR</option>
+                <option value="LF">LF</option>
+              </select></div>
+            <div class="field"><label>指令间隔（秒）</label>
+              <input class="inp" type="number" data-cfg="pro_delay" min="0" max="10" step="any"
+                on:change={onProDelay} bind:value={proDelay}></div>
+            <div class="field"><label>响应超时（秒）</label>
+              <input class="inp" type="number" data-cfg="pro_to" min="0.5" max="60" step="any"
+                on:change={onProTo} bind:value={proTo}></div>
+            <div class="field"><label>忽略模组回显</label>
+              <label class="switch"><input type="checkbox" data-cfg="pro_echo"
+                on:change={onProEcho} bind:checked={proEcho}><span>启用</span></label></div>
+          </div>
+        </div>
+      </div>
+      </div>
+      {/if}
+      {#if tab()==='ui'}
+      <div class="set-page active" data-tabpage="ui">
+      <div class="two-col">
+        <div class="panel">
+          <div class="panel-head"><h3 data-i18n="set.ui">界面</h3></div>
+          <div class="form-grid" id="formUI">
+            <div class="field"><label>主题</label>
+              <select class="sel" data-cfg="ui_theme" on:change={onUiTheme} bind:value={uiTheme}>
+                <option value="dark">深色</option>
+                <option value="light">浅色</option>
+                <option value="auto">跟随系统</option>
+              </select></div>
+            <div class="field"><label>强调色</label>
+              <select class="sel" data-cfg="ui_accent" on:change={onUiAccent} bind:value={uiAccent}>
+                <option value="blue">蓝</option>
+                <option value="violet">紫</option>
+                <option value="teal">青</option>
+                <option value="amber">橙</option>
+              </select></div>
+            <div class="field"><label>自定义强调色（hex，留空用预设）</label>
+              <div class="accent-custom">
+                <input type="color" id="uiAccentPick" title="取色器"
+                  on:input={onAccentPick} bind:value={accentPick}>
+                <input class="inp" type="text" data-cfg="ui_accent_custom"
+                  placeholder="如 #58A6FF" maxlength="7" spellcheck="false"
+                  on:change={onAccentCustom} bind:value={accentCustom}>
+              </div></div>
+            <div class="field"><label>窗口透明度</label>
+              <div class="range-row">
+                <input type="range" data-cfg="ui_opacity" min="40" max="100" step="1"
+                  on:input={onOpacInput} on:change={onOpacChange} bind:value={uiOpacity}>
+                <span class="range-val">{uiOpacity()}%</span>
+              </div></div>
+            <div class="field"><label>窗口置顶</label>
+              <label class="switch"><input type="checkbox" data-cfg="win_top"
+                on:change={onWinTop} bind:checked={winTop}><span>启用</span></label></div>
+            <div class="field"><label>字号（px）</label>
+              <input class="inp" type="number" data-cfg="ui_fs" min="12" max="20"
+                on:change={onUiFs} bind:value={uiFs}></div>
+            <div class="field"><label>界面缩放</label>
+              <select class="sel" data-cfg="ui_scale" on:change={onUiScale} bind:value={uiScale}>
+                <option value="0.85">85% 紧凑</option>
+                <option value="0.9">90%</option>
+                <option value="0.95">95%</option>
+                <option value="1">100% 标准</option>
+                <option value="1.05">105%</option>
+                <option value="1.1">110%</option>
+                <option value="1.15">115% 放大</option>
+              </select></div>
+            <div class="field"><label>界面动画</label>
+              <label class="switch"><input type="checkbox" data-cfg="ui_anim"
+                on:change={onUiAnim} bind:checked={uiAnim}><span>启用</span></label></div>
+            <div class="field"><label>日志自动滚动</label>
+              <label class="switch"><input type="checkbox" data-cfg="ui_scroll"
+                on:change={onUiScroll} bind:checked={uiScroll}><span>启用</span></label></div>
+            <div class="field"><label>显示时间戳</label>
+              <label class="switch"><input type="checkbox" data-cfg="ui_ts"
+                on:change={onUiTs} bind:checked={uiTs}><span>启用</span></label></div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><h3 data-i18n="set.behavior">行为</h3></div>
+          <div class="form-grid" id="formBehavior">
+            <div class="field"><label>记住发送历史</label>
+              <label class="switch"><input type="checkbox" data-cfg="beh_hist"
+                on:change={onBehHist} bind:checked={behHist}><span>启用</span></label></div>
+            <div class="field"><label>历史条数上限</label>
+              <input class="inp" type="number" data-cfg="beh_histmax" min="10" max="1000"
+                on:change={onBehHistmax} bind:value={behHistmax}></div>
+            <div class="field"><label>启用内置 HTTP 服务（浏览器模式）</label>
+              <label class="switch"><input type="checkbox" data-cfg="beh_http"
+                on:change={onBehHttp} bind:checked={behHttp}><span>启用</span></label></div>
+            <div class="field"><label>HTTP 端口（0=自动）</label>
+              <input class="inp" type="number" data-cfg="beh_port" min="0" max="65535"
+                on:change={onBehPort} bind:value={behPort}></div>
+            <div class="field"><label>执行前二次确认</label>
+              <label class="switch"><input type="checkbox" data-cfg="beh_confirm"
+                on:change={onBehConfirm} bind:checked={behConfirm}><span>启用</span></label></div>
+            <div class="field"><label>启动时自动连接上次串口</label>
+              <label class="switch"><input type="checkbox" data-cfg="beh_autoconn"
+                on:change={onBehAutoconn} bind:checked={behAutoconn}><span>启用</span></label></div>
+          </div>
+        </div>
+      </div>
+      </div>
+      {/if}
+      {#if tab()==='profile'}
+      <div class="set-page active" data-tabpage="profile">
+      <div class="panel">
+        <div class="panel-head">
+          <h3>配置集（OEM）</h3>
+          <span class="cmd-cat" id="profileCount">{profileCountText()}</span>
+        </div>
+        <p class="small" style="margin:0 0 10px;color:var(--text-dim)">
+          配置集决定本应用的全部内容：品牌名、指令库、一键配置场景、测试套件与默认按钮。
+          换一个配置集，整个应用就变成另一款模组的专用上位机。
+        </p>
+        <div class="form-grid">
+          <div class="field">
+            <label>当前配置集</label>
+            <select class="sel" id="setSelProfile" on:change={onProfileSelChange} bind:value={profileSel}>
+              {#if !profiles().length}
+              <option value="">（无可用配置集）</option>
+              {/if}
+              {#each profiles() as p}
+              <option value={p.id}>{p.name || p.id}</option>
+              {/each}
+            </select>
+            <span class="hint" id="setProfileHint">{profileHint()}</span>
+          </div>
+          <div class="field" style="grid-column:1/-1">
+            <label>允许编辑配置集</label>
+            <label class="switch"><input type="checkbox" id="chkEditMode"
+              on:change={onEditModeChange} bind:checked={editMode}>
+              <span>开启后可新增 / 修改 / 删除指令、场景与套件</span></label>
+            <span class="hint">关闭后，全站的「+ 新建 / 编辑 / 删除」按钮都会隐藏</span>
+          </div>
+        </div>
+        <div class="row-actions" style="margin-top:10px">
+          <button class="ghost-btn" id="btnProfileNew" on:click={openNewProfile}>新建配置集</button>
+          <button class="ghost-btn" id="btnProfileDup" on:click={openDupProfile}>复制当前</button>
+          <button class="ghost-btn" id="btnProfileImport" on:click={openImportProfile}>导入 JSON</button>
+          <button class="ghost-btn" id="btnProfileExport" on:click={exportCurrentProfile}>导出当前</button>
+          <button class="ghost-btn" id="btnProfileDir" on:click={openProfilesDir}>打开配置目录</button>
+          <button class="ghost-btn danger" id="btnProfileDel" on:click={openDeleteProfile}>删除当前</button>
+        </div>
+        <div class="mono small" id="profileDirText" style="margin-top:8px">{profileDirText()}</div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h3>配置集信息（OEM 元信息）</h3>
+          <span class="cmd-cat">版本 / 作者 / 发布时间 / 网址 / 介绍</span></div>
+        <p class="small" style="margin:0 0 10px;color:var(--text-dim)">
+          这些信息会出现在首页介绍下方与「关于」页，便于标注当前配置集的来源与归属。
+        </p>
+        <div class="form-grid">
+          <div class="field"><label>版本号</label>
+            <input class="inp" id="metaVersion" placeholder="例如 1.0.0" bind:value={metaVersion}></div>
+          <div class="field"><label>作者 / 厂商</label>
+            <input class="inp" id="metaAuthor" placeholder="例如 Acme IoT" bind:value={metaAuthor}></div>
+          <div class="field"><label>发布时间</label>
+            <input class="inp" id="metaDate" placeholder="例如 2026-03-01" bind:value={metaDate}></div>
+          <div class="field"><label>官方网址</label>
+            <input class="inp" id="metaWebsite" placeholder="https://..." bind:value={metaWebsite}></div>
+          <div class="field field-wide"><label>介绍</label>
+            <textarea class="inp" id="metaIntro" rows="3"
+              placeholder="一句话描述本配置集适配的模组与用途" bind:value={metaIntro}></textarea></div>
+        </div>
+        <div class="row-actions" style="margin-top:8px">
+          <button class="primary-btn" id="btnSaveMeta" on:click={saveMeta}>保存元信息</button>
+        </div>
+      </div>
+      </div>
+      {/if}
+      {#if tab()==='data'}
+      <div class="set-page active" data-tabpage="data">
+      <div class="panel">
+        <div class="panel-head"><h3 data-i18n="set.window">窗口</h3></div>
+        <div class="row-actions">
+          <button class="ghost-btn" id="btnWinSmall" on:click={() => winSet(1080, 700)}>小窗 1080 × 700</button>
+          <button class="ghost-btn" id="btnWinDefault" on:click={() => winSet(1120, 720)}>默认 1120 × 720</button>
+          <button class="ghost-btn" id="btnWinLarge" on:click={() => winSet(1400, 880)}>大窗 1400 × 880</button>
+          <button class="ghost-btn" id="btnWinMax" on:click={winMax}>最大化</button>
+        </div>
+        <p class="small" style="margin:6px 0 0;color:var(--text-faint)">
+          也可以直接用鼠标拖动窗口任意边缘或四角来调整大小；双击标题栏可最大化/还原。
+        </p>
+        <div class="mono small" id="winSizeText" style="margin-top:6px">{winSize()}</div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h3 data-i18n="set.data">数据与诊断</h3></div>
+        <div class="row-actions">
+          <button class="ghost-btn" id="btnOpenData" on:click={openDataFolder}>打开数据目录</button>
+          <button class="ghost-btn" id="btnOpenLogs" on:click={openLogsFolder}>打开日志目录</button>
+          <button class="ghost-btn" id="btnSelfTest" on:click={runSelfTest}>运行自检</button>
+          <button class="ghost-btn danger" id="btnResetCfg" on:click={openResetCfg}>恢复默认设置</button>
+        </div>
+        <div class="mono small" id="dataDirText">{dataDirText()}</div>
+        {#if stOpen()}
+        <div id="selftestBox" class="selftest">
+          {#if stRunning()}
+          <div class="st-item">正在自检…</div>
+          {/if}
+          {#each stChecks() as c, i}
+          <div class="st-item" style="animation-delay:{i * 35}ms">
+            <span class="st-flag" class:ok={c && c.ok} class:fail={!(c && c.ok)}>{c && c.ok ? 'OK' : 'FAIL'}</span>
+            <span>{c ? c.name : ''}</span>
+            <span class="st-detail">{c ? (c.detail || '') : ''}</span>
+          </div>
+          {/each}
+        </div>
+        {/if}
+      </div>
+      </div>
+      {/if}
+
+      {#if dlg().open && dlg().id==='newProfile'}
+      <div class="modal-layer">
+        <div class="modal-backdrop" on:click={closeDlg}></div>
+        <div class="modal">
+          <div class="modal-head"><h3>{dlg().title}</h3>
+            <button class="icon-btn" on:click={closeDlg}>✕</button></div>
+          <div class="modal-body">
+            <div class="form-grid">
+              <div class="field"><label>标识（英文，用于目录名）</label>
+                <input class="inp" id="npId" placeholder="例如 acme900" bind:value={npId}>
+                <span class="hint">只能小写字母/数字/-/_，须以字母数字开头</span></div>
+              <div class="field"><label>显示名称</label>
+                <input class="inp" id="npName" placeholder="例如 ACME-900 模组" bind:value={npName}></div>
+              <div class="field"><label>品牌名（标题栏显示）</label>
+                <input class="inp" id="npBrand" placeholder="留空则同显示名称" bind:value={npBrand}></div>
+              <div class="field"><label>副标题</label>
+                <input class="inp" id="npSub" placeholder="例如 ACME-900 · 私有 AT 指令集" bind:value={npSub}></div>
+            </div>
+            <div class="field" style="margin-top:10px"><label>起点</label>
+              <select class="sel" id="npBase" bind:value={npBase}>
+                <option value="">空白配置（从零开始）</option>
+                {#each profiles() as p}
+                <option value={p.id}>复制自：{p.name || p.id}</option>
+                {/each}
+              </select>
+              <span class="hint">选「复制自」可把现有模组的指令库/场景/套件作为模板，改起来最快</span></div>
+          </div>
+          <div class="modal-foot">
+            <button class="ghost-btn" on:click={closeDlg}>取消</button>
+            <button class="primary-btn" on:click={confirmNewProfile}>创建并切换</button>
+          </div>
+        </div>
+      </div>
+      {/if}
+
+      {#if dlg().open && dlg().id==='dupProfile'}
+      <div class="modal-layer">
+        <div class="modal-backdrop" on:click={closeDlg}></div>
+        <div class="modal">
+          <div class="modal-head"><h3>{dlg().title}</h3>
+            <button class="icon-btn" on:click={closeDlg}>✕</button></div>
+          <div class="modal-body">
+            <div class="form-grid">
+              <div class="field"><label>新标识</label>
+                <input class="inp" id="dpId" bind:value={dpId}></div>
+              <div class="field"><label>新名称</label>
+                <input class="inp" id="dpName" bind:value={dpName}></div>
+            </div>
+            <p class="small" style="color:var(--text-dim);margin-top:10px">
+              会完整复制指令库、场景、套件与默认按钮，随后可直接编辑。</p>
+          </div>
+          <div class="modal-foot">
+            <button class="ghost-btn" on:click={closeDlg}>取消</button>
+            <button class="primary-btn" on:click={confirmDupProfile}>复制并切换</button>
+          </div>
+        </div>
+      </div>
+      {/if}
+
+      {#if dlg().open && dlg().id==='importProfile'}
+      <div class="modal-layer">
+        <div class="modal-backdrop" on:click={closeDlg}></div>
+        <div class="modal">
+          <div class="modal-head"><h3>{dlg().title}</h3>
+            <button class="icon-btn" on:click={closeDlg}>✕</button></div>
+          <div class="modal-body">
+            <div class="field"><label>粘贴配置集 JSON 包</label>
+              <textarea class="inp" id="ipJson" rows="9" placeholder={IMP_JSON_PH} bind:value={ipJson}></textarea>
+              <span class="hint">也可只粘贴 profile 对象本身；可与「导出当前」得到的内容互通</span></div>
+            <div class="field" style="margin-top:8px"><label>覆盖标识（可选）</label>
+              <input class="inp" id="ipId" placeholder="留空=沿用包内 id，冲突时自动加序号" bind:value={ipId}>
+              <span class="hint">想让导入的配置用指定目录名时填写</span></div>
+          </div>
+          <div class="modal-foot">
+            <button class="ghost-btn" on:click={closeDlg}>取消</button>
+            <button class="primary-btn" on:click={confirmImportProfile}>导入</button>
+          </div>
+        </div>
+      </div>
+      {/if}
+
+      {#if dlg().open && dlg().id==='delProfile'}
+      <div class="modal-layer">
+        <div class="modal-backdrop" on:click={closeDlg}></div>
+        <div class="modal">
+          <div class="modal-head"><h3>{dlg().title}</h3>
+            <button class="icon-btn" on:click={closeDlg}>✕</button></div>
+          <div class="modal-body">
+            <p>确定删除「{curProfile().name || curProfile().id}」？</p>
+            <p class="small" style="color:var(--text-dim)">该配置集的目录与其中自定义按钮会一并移除，
+              不可恢复。当前会切换回默认配置集。</p>
+          </div>
+          <div class="modal-foot">
+            <button class="ghost-btn" on:click={closeDlg}>取消</button>
+            <button class="primary-btn" on:click={confirmDeleteProfile}>删除</button>
+          </div>
+        </div>
+      </div>
+      {/if}
+
+      {#if dlg().open && dlg().id==='resetCfg'}
+      <div class="modal-layer">
+        <div class="modal-backdrop" on:click={closeDlg}></div>
+        <div class="modal">
+          <div class="modal-head"><h3>{dlg().title}</h3>
+            <button class="icon-btn" on:click={closeDlg}>✕</button></div>
+          <div class="modal-body">
+            <p>串口与界面设置会恢复默认值（按钮数据不受影响）。</p>
+          </div>
+          <div class="modal-foot">
+            <button class="ghost-btn" on:click={closeDlg}>取消</button>
+            <button class="primary-btn" on:click={confirmResetCfg}>确定</button>
+          </div>
+        </div>
+      </div>
+      {/if}
+    </section>

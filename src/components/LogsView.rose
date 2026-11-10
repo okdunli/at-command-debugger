@@ -1,0 +1,176 @@
+<script>
+  // LogsView - 1:1 port of index.html #page-logs + app.js program-log
+  // rendering (rerenderLogs/updateLogStats/logLine). Serial lines (tx/rx)
+  // belong to the TerminalView; this page renders sys/mark/errors.
+  import Dialog from './Dialog.rose';
+  export let s = null as any;
+  export let onSet = null as any;
+  export let onCall = null as any;
+  export let onToast = null as any;
+  export let onGoto = null as any;
+
+  let lfType = $state('all');
+  let lfKw = $state('');
+  let dlg = $state(false);
+  let sessions = $state<any[]>([]);
+  let kwTimer: any = null;
+
+  function logs(): any[] { return (s && s().logs) || []; }
+  function isProgram(l: any): boolean { return !!l && !(l.dir === 'tx' || l.dir === 'rx'); }
+  function showTs(): boolean { return !((s && s().config && s().config.ui && s().config.ui.timestamps) === false); }
+  function fmtTs(ts: number): string {
+    const d = new Date((ts || Date.now() / 1000) * 1000);
+    const p = (n: number) => String(n).padStart(2, '0');
+    return p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds()) + '.' + String(d.getMilliseconds()).padStart(3, '0');
+  }
+  function dirLabel(dir: string): string { return dir === 'sys' ? 'SYS' : dir === 'mark' ? 'MARK' : String(dir || 'RX').toUpperCase(); }
+  function logClass(l: any): string {
+    const t = String((l && l.text) || '').trim();
+    if (/^AT_ERROR|^AT_PARAM_ERROR|^AT_BUSY_ERROR|^AT_NO_NET|^AT_RX_ERROR|^AT_DUTY|^AT_CRYPTO/.test(t)) return 'err';
+    if (t === 'OK') return 'ok';
+    if (t.indexOf('+EVT') === 0) return 'evt';
+    return '';
+  }
+  function matches(l: any): boolean {
+    if (lfType() === 'sys' && (l.dir || 'rx') !== 'sys') return false;
+    if (lfType() === 'err' && !(l.err && l.err.length)) return false;
+    if (lfType() === 'mark' && (l.dir || 'rx') !== 'mark') return false;
+    if (lfKw()) {
+      const k = String(lfKw()).toUpperCase();
+      if (!String(l.text || '').toUpperCase().includes(k) && !String(l.hex || '').toUpperCase().includes(k)) return false;
+    }
+    return true;
+  }
+  // BUG.md workaround: filters travel with the row data so the each source
+  // changes with them (component-internal per-row markers do not re-patch).
+  function progRows(): any[] {
+    const ts = showTs();
+    return logs().filter((l) => isProgram(l) && matches(l)).slice(-2000).map((l) => ({ l, ts }));
+  }
+  function stats(): any {
+    let tx = 0, rx = 0, sys = 0, err = 0, mark = 0;
+    for (const l of logs()) {
+      const d = l.dir || 'rx';
+      if (d === 'tx') tx++;
+      else if (d === 'sys') sys++;
+      else if (d === 'mark') mark++;
+      else rx++;
+      if (l.err && l.err.length) err++;
+    }
+    return { tx, rx, sys, err, mark, total: logs().length };
+  }
+  function onKwInput(e: Event) {
+    const v = (e.target as HTMLInputElement).value;
+    if (kwTimer) clearTimeout(kwTimer);
+    kwTimer = setTimeout(() => $setState('lfKw', v), 160);
+  }
+  function copyText(t: string) {
+    try { navigator.clipboard.writeText(t); } catch (e) {
+      const ta = document.createElement('textarea');
+      ta.value = t; document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy'); } catch (e2) { /* noop */ }
+      ta.remove();
+    }
+    onToast('已复制：' + t.slice(0, 40));
+  }
+  function clearLogs() { onSet('logs', []); }
+  async function exportLogs() {
+    const r: any = await onCall('export_logs', { logs: logs().filter((l: any) => !(l.dir === 'tx' || l.dir === 'rx')).slice(-2000) });
+    if (r && r.ok) { onToast('已导出：' + r.path, 'ok'); void onCall('open_path', { path: r.path }); }
+    else onToast((r && r.error) || '导出失败', 'err');
+  }
+  async function openSessions() {
+    const r: any = await onCall('list_session_logs');
+    $setState('sessions', (r && r.sessions) || []);
+    $setState('dlg', true);
+    try { document.dispatchEvent(new CustomEvent('rosezm:dialog-sync')); } catch (e) { /* noop */ }
+  }
+  async function viewSession(name: string) {
+    const r: any = await onCall('read_session_log', { name });
+    if (r && r.ok) { onSet('logs', r.events || []); onGoto('terminal'); }
+    else onToast((r && r.error) || '日志不存在或为空', 'err');
+    $setState('dlg', false);
+    try { document.dispatchEvent(new CustomEvent('rosezm:dialog-sync')); } catch (e) { /* noop */ }
+  }
+  async function exportSession(name: string) {
+    const r: any = await onCall('export_session_log', { name, fmt: 'txt' });
+    if (r && r.ok) { onToast('已导出：' + r.path, 'ok'); void onCall('open_path', { path: r.path }); }
+    else onToast((r && r.error) || '导出失败', 'err');
+  }
+  async function deleteSession(name: string) {
+    const r: any = await onCall('delete_session_log', { name });
+    if (r && r.ok) onToast('已删除', 'ok');
+    else onToast((r && r.error) || '删除失败', 'err');
+    $setState('sessions', sessions().filter((x) => x.name !== name));
+  }
+  onCleanup(() => { if (kwTimer) clearTimeout(kwTimer); });
+
+  // Esc (shell) resets this view's local dialog state so a later open is a
+  // real false -> true transition; the Dialog child keeps its own latch.
+  onMount(() => {
+    const __resetDlg = () => { $setState('dlg', { open: false, id: '', title: '' }); };
+    document.addEventListener('rosezm:dialog-reset', __resetDlg);
+    onCleanup(() => document.removeEventListener('rosezm:dialog-reset', __resetDlg));
+  });
+</script>
+
+    <section class="page " class:active={s && s().page==='logs'} id="page-logs">
+      <div class="page-head">
+        <h1>程序日志</h1>
+        <p class="page-sub">程序日志：连接事件、配置切换、任务进度与错误（串口收发 TX/RX 不在此页，见「串口终端」）</p>
+        <div class="head-actions">
+          <button class="ghost-btn " id="btnLogFiles2" on:click={openSessions}>日志文件</button>
+          <button class="ghost-btn " id="btnExportLog2" on:click={exportLogs}>导出日志</button>
+          <button class="ghost-btn danger" id="btnClearLog2">清空</button>
+        </div>
+      </div>
+      <div class="log-filter-bar">
+        <div class="filter-chips" id="logChips2">
+          <button class="chip " class:on={lfType()==='all'} data-type="all" on:click={() => $setState('lfType', 'all')}>全部</button>
+          <button class="chip " class:on={lfType()==='sys'} data-type="sys" on:click={() => $setState('lfType', 'sys')}>SYS</button>
+          <button class="chip " class:on={lfType()==='err'} data-type="err" on:click={() => $setState('lfType', 'err')}>错误</button>
+          <button class="chip " class:on={lfType()==='mark'} data-type="mark" on:click={() => $setState('lfType', 'mark')}>标记</button>
+        </div>
+        <div class="search-box">
+          <span class="search-ico" data-icon="search"></span>
+          <input type="text" id="logSearch2" placeholder="过滤日志内容" on:input={onKwInput}>
+        </div>
+      </div>
+      <div class="terminal" id="logAll">
+      {#each progRows() as r (r.l.ts + ':' + r.l.dir + ':' + r.l.text)}
+      <div class="log-line  " class:log-mark-line={r.l.dir === 'mark'} class:has-err={r.l.err && r.l.err.length}
+           title="点击复制该行内容" on:click={() => copyText(String(r.l.text || ''))}>
+        {#if r.ts}<span class="log-ts">{fmtTs(r.l.ts)}</span>{/if}
+        <span class={r.l.dir === 'tx' ? 'log-dir tx' : r.l.dir === 'sys' ? 'log-dir sys' : r.l.dir === 'mark' ? 'log-dir mark' : 'log-dir rx'}>{dirLabel(r.l.dir || 'rx')}</span>
+        <span class={'log-text' + (logClass(r.l) ? ' ' + logClass(r.l) : '')}>{r.l.text || ''}</span>
+        {#if r.l.err && r.l.err.length}
+        <span class="log-err-tag" title={() => r.l.err[0].hint || ''}>{r.l.err[0].code} · {r.l.err[0].meaning}</span>
+        {/if}
+      </div>
+      {/each}
+    </div>
+      <div class="log-statbar" id="logStatbar">
+        <span class="st-chip tx">TX <b id="stTx">{stats().tx}</b></span>
+        <span class="st-chip rx">RX <b id="stRx">{stats().rx}</b></span>
+        <span class="st-chip sys">SYS <b id="stSys">{stats().sys}</b></span>
+        <span class="st-chip err">错误 <b id="stErr">{stats().err}</b></span>
+        <span class="st-chip mark">标记 <b id="stMark">{stats().mark}</b></span>
+        <span class="st-chip total">共 <b id="stTotal">{stats().total}</b> 行</span>
+      </div>
+    
+  <Dialog dialogKey="logs" open={() => dlg()} title={() => '会话日志文件'} onClose={() => $setState('dlg', false)}>
+    <div class="session-list">
+      {#each sessions() as ss (ss.name)}
+      <div class="session-row" data-name={ss.name}>
+        <span>{ss.name} · {ss.count || 0} 行 · {ss.port || ''}</span>
+        <button on:click={() => viewSession(ss.name)}>查看</button>
+        <button on:click={() => exportSession(ss.name)}>导出</button>
+        <button on:click={() => deleteSession(ss.name)}>删除</button>
+      </div>
+      {/each}
+      {#if !sessions().length}<div class="dock-empty">暂无会话日志</div>{/if}
+    </div>
+    <button class="ghost-btn" slot="foot" on:click={openSessions}>刷新</button>
+    <button class="ghost-btn" slot="foot" on:click={() => $setState('dlg', false)}>关闭</button>
+  </Dialog>
+</section>

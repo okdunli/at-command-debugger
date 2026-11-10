@@ -1,0 +1,79 @@
+<script>
+  // Dialog - shared modal primitive (1:1 port of app.js modal pattern).
+  // The layer is ALWAYS in the DOM, identified by a render-time-unique
+  // data-dialog-id; visibility is driven by events so a single Esc in the
+  // shell can close every open dialog (original app.js closes all modals on
+  // Esc) and a view's own open/close stays a clean false<->true transition:
+  //   rosezm:dialog-sync          - a view changed dialog state
+  //   rosezm:dialog-sync(reopen)  - a view OPENED a dialog: clear this layer's esc flag
+  //   rosezm:dialog-close-all     - shell Esc: hide every layer, set esc flag
+  //   rosezm:dialog-reset         - shell Esc: views reset their own dlg state (afterEsc=0)
+  export let open = false as any;
+  export let title = '' as any;
+  export let onClose = null as any;
+  export let dialogKey = '' as any;
+
+  const g0: any = globalThis as any;
+  const dialogId = 'dlg-' + ((g0.__rosezmDialogIdSeq = (g0.__rosezmDialogIdSeq || 0) + 1));
+
+  function close() {
+    if (onClose) onClose();
+    try { document.dispatchEvent(new CustomEvent('rosezm:dialog-sync')); } catch (e) { /* noop */ }
+  }
+  function titleText(): string { const v: any = title; return typeof v === 'function' ? String(v() ?? '') : String(v ?? ''); }
+  function keyText(): string { const v: any = dialogKey; return typeof v === 'function' ? String(v() ?? '') : String(v ?? ''); }
+  function isOpen(): boolean { const v: any = open; return typeof v === 'function' ? !!v() : !!v; }
+  function layer(): HTMLElement | null {
+    return document.querySelector('[data-dialog-id="' + dialogId + '"]') as HTMLElement | null;
+  }
+  function applyVisibility(reopen = false) {
+    const el = layer();
+    if (!el) return;
+    if (reopen) delete el.dataset.esc;
+    const esc = el.dataset.esc === '1';
+    const lit = isOpen() && !esc;
+    el.hidden = !lit;
+    el.style.display = lit ? '' : 'none';
+    const h = el.querySelector('h3');
+    if (h) h.textContent = titleText();
+  }
+
+  $effect(() => { applyVisibility(); });
+
+  onMount(() => {
+    const closeAll = () => {
+      const el = layer();
+      if (el) {
+        el.dataset.esc = '1';
+        el.hidden = true;
+        el.style.display = 'none';
+      }
+    };
+    const sync = (e: Event) => {
+      const detail: any = (e as CustomEvent).detail || {};
+      const mine = !detail.key || detail.key === keyText();
+      if (detail.reopen && mine) {
+        const el = layer();
+        if (el) delete el.dataset.esc;
+      }
+      applyVisibility(detail.reopen && mine);
+    };
+    document.addEventListener('rosezm:dialog-close-all', closeAll);
+    document.addEventListener('rosezm:dialog-sync', sync);
+    onCleanup(() => {
+      document.removeEventListener('rosezm:dialog-close-all', closeAll);
+      document.removeEventListener('rosezm:dialog-sync', sync);
+    });
+    applyVisibility();
+  });
+</script>
+
+<div class="modal-layer" data-dialog-id={dialogId} hidden>
+  <div class="modal-backdrop" on:click={close}></div>
+  <div class="modal">
+    <div class="modal-head"><h3>{titleText()}</h3>
+      <button class="icon-btn" on:click={close}>✕</button></div>
+    <div class="modal-body"><slot /></div>
+    <div class="modal-foot"><slot name="foot" /></div>
+  </div>
+</div>

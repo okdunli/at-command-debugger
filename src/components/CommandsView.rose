@@ -1,0 +1,674 @@
+<script>
+  // CommandsView - 1:1 port of index.html #page-commands + the matching app.js logic.
+  // Contract (see docs/contract.md): s/onSet/onCall/onToast/onGoto props.
+  // Read global state as s().key (props are plain values, NOT getters); write via onSet('key', value);
+  // backend via await onCall('method', args); toasts via onToast(msg, type).
+  export let s = null as any;
+  export let onSet = null as any;
+  export let onCall = null as any;
+  export let onToast = null as any;
+  export let onGoto = null as any;
+
+  // ---- view-local state (renderCommands / renderCmdDetail / dialogs / dnd) ----
+  let list = $state<any[]>([]);
+  let loaded = $state(false);
+  let cat = $state('');
+  let kw = $state('');
+  let kwF = $state('');
+  let openId = $state('');
+  let details = $state<any>({});
+  let paramVals = $state<any>({});
+  let valErr = $state(false);
+  let valHint = $state('');
+  let dlg = $state<any>({ open: false, id: '', title: '' });
+  let editId = $state('');
+  let cId = $state('');
+  let cName = $state('');
+  let cCat = $state('');
+  let cCatCustom = $state('');
+  let cSum = $state('');
+  let cDesc = $state('');
+  let cModes = $state('');
+  let cDelay = $state('');
+  let cParams = $state('');
+  let cExample = $state('');
+  let cResults = $state('');
+  let delId = $state('');
+  let sendCmd = $state('');
+
+  let kwTimer: any = null;
+  let dragId = '';
+  let dragCat = '';
+  let dragEl: any = null;
+  let loadedPid: any = undefined;
+
+  // ---- helpers ----
+  function bootObj(): any { return (s && s().boot) || null; }
+  function editMode(): boolean { const b = bootObj(); return !!(b && b.edit_mode); }
+  function connected(): boolean {
+    const st = (s && s().status) || (bootObj() && bootObj().status) || null;
+    return !!(st && st.connected);
+  }
+  function bootCats(): any[] { const b = bootObj(); return (b && b.categories) || []; }
+  function catIdOf(c: any): string {
+    return typeof c === 'string' ? c : String((c && c.id) || '');
+  }
+  function catLabel(c: any): string {
+    return typeof c === 'string' ? c : String((c && c.name) || '');
+  }
+  function catName(id: string): string {
+    const arr = bootCats();
+    for (const c of arr) { if (catIdOf(c) === id) return catLabel(c); }
+    return id;
+  }
+  function firstCatId(): string {
+    const arr = bootCats();
+    if (!arr.length) return '';
+    const f = arr[0];
+    return typeof f === 'string' ? f : String((f && f.id) || '');
+  }
+  function countText(): string {
+    const b = bootObj();
+    if (b && b.command_count != null) return String(b.command_count);
+    return String(list().length);
+  }
+
+  async function callList(method: string, args?: any): Promise<any[]> {
+    try {
+      const r = await onCall(method, args || {});
+      if (Array.isArray(r)) return r;
+      if (r && Array.isArray(r.result)) return r.result;
+      if (r && Array.isArray(r.commands)) return r.commands;
+      if (r && Array.isArray(r.buttons)) return r.buttons;
+      if (r && Array.isArray(r.ports)) return r.ports;
+      return [];
+    } catch (_err) {
+      return [];
+    }
+  }
+
+  async function loadList(): Promise<void> {
+    const arr = await callList('get_commands', {});
+    $setState('list', arr);
+    $setState('loaded', true);
+  }
+
+  // client-side category chip + 220ms-debounced keyword filter
+  // (keyword matches over id + summary + desc, case-insensitive — same as
+  // the backend get_commands keyword filter)
+  function filtered(): any[] {
+    const c = String(cat());
+    const k = String(kwF());
+    return list().filter((x: any) => {
+      if (c && String((x && x.category) || '') !== c) return false;
+      if (!k) return true;
+      const hay = String((x && x.id) || '') + String((x && x.summary) || '') +
+        String((x && x.desc) || '');
+      return hay.toUpperCase().indexOf(k.toUpperCase()) >= 0;
+    });
+  }
+
+  function onSearchInput(e: any) {
+    let v = '';
+    try { v = String(e && e.currentTarget ? e.currentTarget.value : kw()); }
+    catch (_err) { v = String(kw()); }
+    if (kwTimer) clearTimeout(kwTimer);
+    kwTimer = setTimeout(() => { $setState('kwF', v.trim()); }, 220);
+  }
+
+  function catAll() { $setState('cat', ''); }
+  function pickCat(v: string) { $setState('cat', v); }
+
+  // ---- dialogs ----
+  function openDlg(id: string, title: string) {
+    $setState('dlg', { open: true, id: id, title: title });
+    try { document.dispatchEvent(new CustomEvent('rosezm:dialog-sync', { detail: { reopen: true, key: 'commands' } })); } catch (e) { /* noop */ }
+  }
+  function closeDlg() { $setState('dlg', { open: false, id: '', title: '' });
+    try { document.dispatchEvent(new CustomEvent('rosezm:dialog-sync')); } catch (e) { /* noop */ } }
+
+  function resetCmdForm(data: any) {
+    $setState('cId', String(data.id || ''));
+    $setState('cName', String(data.name || ''));
+    const cur = String(data.category || '');
+    const known = bootCats().some((c: any) => catIdOf(c) === cur);
+    if (known) {
+      $setState('cCat', cur);
+      $setState('cCatCustom', '');
+    } else {
+      $setState('cCat', '__custom__');
+      $setState('cCatCustom', cur);
+    }
+    $setState('cSum', String(data.summary || ''));
+    $setState('cDesc', String(data.desc || ''));
+    $setState('cModes', (data.modes || []).join(','));
+    $setState('cDelay', data.delay == null ? '' : String(data.delay));
+    $setState('cParams', JSON.stringify(data.params || [], null, 1));
+    $setState('cExample', JSON.stringify(data.example || [], null, 1));
+    $setState('cResults', JSON.stringify(data.results || [], null, 1));
+  }
+
+  async function editCommand(id: string) {
+    let c: any = null;
+    if (id) {
+      const arr = await callList('get_commands', { keyword: id });
+      for (const x of arr) { if (x && x.id === id) { c = x; break; } }
+    }
+    const data = c ? JSON.parse(JSON.stringify(c)) : {
+      id: '', name: '', category: 'general', summary: '', desc: '',
+      modes: ['run'], params: [], results: [], example: [], delay: 0.3,
+    };
+    $setState('editId', id);
+    resetCmdForm(data);
+    openDlg('editCmd', id ? '编辑指令' : '新建指令');
+  }
+  function addCmd() { void editCommand(''); }
+
+  function getCat(): string {
+    if (String(cCat()) === '__custom__') {
+      return String(cCatCustom()).trim() || firstCatId();
+    }
+    return String(cCat());
+  }
+  function onCatChange() {
+    if (String(cCat()) === '__custom__') {
+      try {
+        const el: any = document.getElementById('cCatCustom');
+        if (el && el.focus) el.focus();
+      } catch (_err) { /* ignore */ }
+    }
+  }
+
+  async function saveCmd() {
+    const payload: any = {
+      id: (String(editId()) || String(cId()).trim()).toUpperCase(),
+      name: String(cName()).trim() || String(cId()).trim(),
+      category: getCat(),
+      summary: String(cSum()).trim(),
+      desc: String(cDesc()).trim(),
+      modes: String(cModes()).split(',').map((x: string) => x.trim()).filter((x: string) => !!x),
+      delay: parseFloat(String(cDelay())) || 0.3,
+    };
+    try {
+      payload.params = JSON.parse(String(cParams() || '[]'));
+      payload.example = JSON.parse(String(cExample() || '[]'));
+      payload.results = JSON.parse(String(cResults() || '[]'));
+    } catch (e: any) {
+      onToast('JSON 解析失败：' + (e && e.message), 'err');
+      return;
+    }
+    if (!payload.id) { onToast('请填写指令 ID', 'warn'); return; }
+    const r: any = String(editId())
+      ? await onCall('update_command', { cmd_id: editId(), payload: payload })
+      : await onCall('add_command', { payload: payload });
+    if (!r || !r.ok) { onToast((r && r.error) || '保存失败', 'err'); return; }
+    onToast('已保存', 'ok');
+    if (r && Array.isArray(r.commands)) $setState('list', r.commands);
+    else await loadList();
+    closeDlg();
+  }
+
+  function askDelete(id: string) {
+    $setState('delId', id);
+    openDlg('delCmd', '删除指令');
+  }
+  async function confirmDelete() {
+    const r: any = await onCall('delete_command', { cmd_id: delId() });
+    if (!r || !r.ok) { onToast((r && r.error) || '删除失败', 'err'); return; }
+    onToast('已删除', 'ok');
+    if (r && Array.isArray(r.commands)) $setState('list', r.commands);
+    else await loadList();
+    closeDlg();
+  }
+
+  // ---- card expand + detail ----
+  function det(id: string): any {
+    const o = details();
+    return o[id] || null;
+  }
+  async function toggleCmd(id: string) {
+    if (String(openId()) === id) { $setState('openId', ''); return; }
+    $setState('openId', id);
+    $setState('valErr', false);
+    $setState('valHint', '');
+    if (det(id)) return;
+    const arr = await callList('get_commands', { keyword: id });
+    let c: any = null;
+    for (const x of arr) { if (x && x.id === id) { c = x; break; } }
+    if (!c) c = { id: id };
+    const vals: any = { ...paramVals() };
+    for (const p of (c.params || [])) {
+      const k = id + '::' + String(p.name);
+      if (vals[k] === undefined) vals[k] = p.default == null ? '' : String(p.default);
+    }
+    $setState('paramVals', vals);
+    const now: any = { ...details() };
+    now[id] = c;
+    $setState('details', now);
+  }
+
+  // rowItems(): the each-source carries the per-row state. Rows in an
+  // external component do not re-patch on component-state changes (BUG.md
+  // entry), so the state travels WITH the row data instead.
+  function rowItems(): any[] {
+    const open = openId();
+    return filtered().map((c: any) => ({ c, open: open === c.id, d: det(c.id) }));
+  }
+  function pv(id: string, name: string): string {
+    const o = paramVals();
+    const k = id + '::' + String(name);
+    return o[k] === undefined ? '' : String(o[k]);
+  }
+  function setPv(id: string, name: string, v: string) {
+    const o: any = { ...paramVals() };
+    o[id + '::' + String(name)] = v;
+    $setState('paramVals', o);
+  }
+
+  function actList(c: any): any[] {
+    const modes = (c && c.modes) || [];
+    const out: any[] = [];
+    if (modes.indexOf('set') >= 0 || ((c && c.params) || []).length) {
+      out.push({ text: '设置（写入）', mode: 'set' });
+    }
+    if (modes.indexOf('get') >= 0) out.push({ text: '读取', mode: 'get' });
+    if (modes.indexOf('run') >= 0) out.push({ text: '执行', mode: 'run' });
+    out.push({ text: '帮助', mode: 'help' });
+    out.push({ text: '复制', mode: 'copy' });
+    return out;
+  }
+
+  function collectValue(c: any): string {
+    const vals: string[] = [];
+    for (const p of ((c && c.params) || [])) {
+      const v = pv(c.id, p.name).trim();
+      if (v !== '') vals.push(v);
+    }
+    return vals.join(',');
+  }
+
+  function copyText(text: string) {
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      ta.remove();
+      onToast('已复制：' + text, 'ok');
+    } catch (_err) {
+      onToast('复制失败', 'err');
+    }
+  }
+
+  async function doSend(cmd: string) {
+    if (!connected()) { onToast('请先连接串口', 'warn'); return null; }
+    const r: any = await onCall('send_command', { cmd: cmd });
+    const rtt = r && r.duration != null ? Math.round(r.duration * 1000) : null;
+    if (r && r.ok) {
+      onToast('已发送：' + cmd + ' → ' + (r.status || 'OK') +
+        (rtt != null && rtt > 0 ? '（' + rtt + ' ms）' : ''), 'ok');
+    } else {
+      onToast('发送失败：' + ((r && (r.error || r.status)) || '超时') +
+        (rtt != null && rtt > 0 ? '（' + rtt + ' ms）' : ''), 'err');
+      if (r && r.hint) setTimeout(() => { onToast(r.hint, 'warn', 9000); }, 350);
+    }
+    return r;
+  }
+
+  async function cmdAction(c: any, mode: string) {
+    $setState('valErr', false);
+    $setState('valHint', '');
+    const value = collectValue(c);
+    if (mode === 'copy') {
+      const r: any = await onCall('build_command_preview', {
+        cmd_id: c.id, value: value,
+        mode: ((c.modes || []).indexOf('set') >= 0) ? 'auto' : 'get',
+      });
+      copyText((r && r.cmd) || c.id);
+      return;
+    }
+    let cmd = '';
+    if (mode === 'set') {
+      const r: any = await onCall('build_command_preview',
+        { cmd_id: c.id, value: value, mode: 'auto' });
+      cmd = (r && r.cmd) || '';
+      const v: any = await onCall('validate_command', { cmd_id: c.id, value: value });
+      if (v && v.ok === false && (c.params || []).length) {
+        onToast('参数校验失败：' + (v.message || ''), 'err');
+        $setState('valHint', v.message || '');
+        $setState('valErr', true);
+        return;
+      }
+    } else {
+      const r: any = await onCall('build_command_preview',
+        { cmd_id: c.id, mode: mode });
+      cmd = (r && r.cmd) || '';
+    }
+    if (c.dangerous) {
+      $setState('sendCmd', cmd);
+      openDlg('confirmSend', '确认发送');
+      return;
+    }
+    await doSend(cmd);
+  }
+  async function confirmSend() {
+    const cmd = String(sendCmd());
+    closeDlg();
+    await doSend(cmd);
+  }
+
+  // ---- drag & drop (edit mode only) ----
+  function onCardDragStart(e: any, id: string, category: string) {
+    if (!editMode()) return;
+    dragEl = e.currentTarget;
+    dragId = id;
+    dragCat = String(category || '');
+    try {
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', id);
+    } catch (_err) { /* ignore */ }
+    try { e.currentTarget.classList.add('dragging'); } catch (_err2) { /* ignore */ }
+  }
+  function onCardDragEnd(e: any) {
+    try { e.currentTarget.classList.remove('dragging'); } catch (_err) { /* ignore */ }
+    dragEl = null;
+    dragId = '';
+    dragCat = '';
+    try {
+      document.querySelectorAll('#cmdCats .chip').forEach((c) =>
+        c.classList.remove('drag-over'));
+    } catch (_err2) { /* ignore */ }
+  }
+  function onCardDragOver(e: any, category: string) {
+    if (!editMode() || !dragEl || dragEl === e.currentTarget) return;
+    if (dragCat !== String(category || '')) return;
+    e.preventDefault();
+    const el = e.currentTarget;
+    const r = el.getBoundingClientRect();
+    const after = (e.clientY - r.top) > r.height / 2;
+    const parent = el.parentNode;
+    if (parent) parent.insertBefore(dragEl, after ? el.nextSibling : el);
+  }
+  function onCardDrop(e: any) {
+    e.preventDefault();
+    if (!editMode() || !dragEl || dragEl === e.currentTarget) return;
+    void persistCmdOrder();
+  }
+  async function persistCmdOrder() {
+    const ids: string[] = [];
+    try {
+      document.querySelectorAll('#cmdList .cmd-card').forEach((el) => {
+        const v = el.getAttribute('data-id');
+        if (v) ids.push(v);
+      });
+    } catch (_err) { /* ignore */ }
+    const r: any = await onCall('reorder_commands', { ids: ids });
+    if (r && r.ok) {
+      onToast('已保存顺序', 'ok');
+      if (r && Array.isArray(r.commands)) $setState('list', r.commands);
+      else await loadList();
+    } else onToast((r && r.error) || '保存顺序失败', 'err');
+  }
+  function onChipDragOver(e: any) {
+    if (editMode() && dragId) {
+      e.preventDefault();
+      try { e.currentTarget.classList.add('drag-over'); } catch (_err) { /* ignore */ }
+    }
+  }
+  function onChipDragLeave(e: any) {
+    try { e.currentTarget.classList.remove('drag-over'); } catch (_err) { /* ignore */ }
+  }
+  async function onChipDrop(e: any, targetCat: string) {
+    e.preventDefault();
+    if (!editMode() || !dragId) return;
+    try { e.currentTarget.classList.remove('drag-over'); } catch (_err) { /* ignore */ }
+    if (dragCat === String(targetCat || '')) return;
+    const r: any = await onCall('update_command', {
+      cmd_id: dragId,
+      payload: { category: targetCat },
+    });
+    if (r && r.ok) {
+      onToast('已移动到「' + (catName(targetCat) || '未分类') + '」', 'ok');
+      await loadList();
+    } else onToast((r && r.error) || '移动失败', 'err');
+  }
+
+  function toolEdit(e: any, id: string) {
+    if (e && e.stopPropagation) e.stopPropagation();
+    void editCommand(id);
+  }
+  function toolDel(e: any, id: string) {
+    if (e && e.stopPropagation) e.stopPropagation();
+    askDelete(id);
+  }
+
+  // Named handlers for the nested {#each} rows (params / action buttons):
+  // an inline arrow inside a nested each may not read the outer each variable,
+  // so per-row ids come off the DOM exactly like the original app.js did.
+  function readParamEvent(e: any) {
+    try {
+      const t = e.currentTarget;
+      const pname = String(t.getAttribute('data-p') || '');
+      const card = t.closest ? t.closest('.cmd-card') : null;
+      const id = card ? String(card.getAttribute('data-id') || '') : '';
+      if (pname && id) setPv(id, pname, String(t.value == null ? '' : t.value));
+    } catch (_err) { /* ignore */ }
+  }
+  function onParamInput(e: any) { readParamEvent(e); }
+  function onParamChange(e: any) { readParamEvent(e); }
+  function onAct(e: any) {
+    try {
+      const t = e.currentTarget;
+      const mode = String(t.getAttribute('data-mode') || '');
+      const card = t.closest ? t.closest('.cmd-card') : null;
+      const id = card ? String(card.getAttribute('data-id') || '') : '';
+      const c = det(id);
+      if (c && mode) void cmdAction(c, mode);
+    } catch (_err) { /* ignore */ }
+  }
+
+  // ---- data: on mount + whenever the active profile changes ----
+  $effect(() => {
+    const pid = (s && s().boot) ? String(s().boot.profile_id || '') : '';
+    if (pid === loadedPid) return;
+    const first = loadedPid === undefined;
+    loadedPid = pid;
+    if (!first) {
+      // profile switch: original reloadAfterProfileChange resets
+      // cmdCat / cmdKeyword / search box / cmdCache
+      if (kwTimer) { clearTimeout(kwTimer); kwTimer = null; }
+      $setState('details', {});
+      $setState('paramVals', {});
+      $setState('openId', '');
+      $setState('cat', '');
+      $setState('kw', '');
+      $setState('kwF', '');
+      $setState('valErr', false);
+      $setState('valHint', '');
+    }
+    void loadList();
+  });
+  onCleanup(() => { if (kwTimer) clearTimeout(kwTimer); });
+
+  // Esc (shell) resets this view's local dialog state so a later open is a
+  // real false -> true transition; the Dialog child keeps its own latch.
+  onMount(() => {
+    const __resetDlg = () => { $setState('dlg', { open: false, id: '', title: '' }); };
+    document.addEventListener('rosezm:dialog-reset', __resetDlg);
+    onCleanup(() => document.removeEventListener('rosezm:dialog-reset', __resetDlg));
+  });
+</script>
+
+    <section class="page " class:active={s && s().page==='commands'} id="page-commands">
+      <div class="page-head">
+        <h1 data-i18n="cmd.title">指令库</h1>
+        <p class="page-sub" id="cmdCount">共 {countText()} 条指令</p>
+        <div class="head-actions">
+          <button class="primary-btn edit-only" id="btnAddCmd" on:click={addCmd}>+ 新建指令</button>
+        </div>
+      </div>
+      <div class="toolbar">
+        <div class="search-box">
+          <span class="search-ico" data-icon="search"></span>
+          <input type="text" id="cmdSearch" placeholder="搜索指令，如 DEUI / 入网 / 频率" bind:value={kw} on:input={onSearchInput}>
+        </div>
+        <div class="chip-row" id="cmdCats">
+          <button class="chip " class:on={cat()===''} data-cat="" on:click={catAll}
+            on:dragover={onChipDragOver} on:dragleave={onChipDragLeave} on:drop={(e: any) => onChipDrop(e, '')}>全部</button>
+          {#each bootCats() as cg}
+            <button class="chip " class:on={cat()===catIdOf(cg)} data-cat={catIdOf(cg)}
+              on:click={() => pickCat(catIdOf(cg))}
+              on:dragover={onChipDragOver} on:dragleave={onChipDragLeave} on:drop={(e: any) => onChipDrop(e, catIdOf(cg))}>{catLabel(cg)}</button>
+          {/each}
+        </div>
+      </div>
+      <div class="cmd-list" id="cmdList">
+        {#if loaded() && !filtered().length}
+          <div class="empty">没有匹配的指令</div>
+        {/if}
+        {#if filtered().length}
+          {#each rowItems() as r, i (r.c.id)}
+            <div class="cmd-card " class:open={r.open} draggable={editMode() ? 'true' : 'false'}
+              data-id={r.c.id} data-cat={String(r.c.category || '')} style="animation-delay:{i * 22}ms"
+              on:dragstart={(e: any) => onCardDragStart(e, r.c.id, String(r.c.category || ''))}
+              on:dragend={onCardDragEnd}
+              on:dragover={(e: any) => onCardDragOver(e, String(r.c.category || ''))}
+              on:drop={onCardDrop}>
+              <div class="cmd-top" on:click={() => toggleCmd(r.c.id)}>
+                <span class="cmd-name">{r.c.name}</span>
+                <span class="cmd-cat">{catName(String(r.c.category || ''))}</span>
+                {#if r.c.dangerous}
+                  <span class="cmd-cat" style="color:var(--err)">危险</span>
+                {/if}
+                <span class="cmd-tools edit-only">
+                  <button data-act="edit" title="编辑" on:click={(e: any) => toolEdit(e, r.c.id)}><i class="lci" data-lucide="pencil"></i></button>
+                  <button data-act="del" title="删除" on:click={(e: any) => toolDel(e, r.c.id)}><i class="lci" data-lucide="trash-2"></i></button>
+                </span>
+              </div>
+              <div class="cmd-sum">{r.c.summary}</div>
+              <div class="cmd-detail" data-detail={r.c.id}>
+                {#if r.open && r.d}
+                  <div class="cmd-desc">{r.d.desc || ''}</div>
+                  {#each (r.d.params || []) as p, pi}
+                    <div class="param-row"><div class="field" style="flex:2">
+                      <label>{p.desc || p.name}</label>
+                      {#if p.type === 'choice'}
+                        <select class="sel " class:err={valErr()} data-p={p.name}
+                          on:change={onParamChange}>
+                          {#each (p.choices || []) as o}
+                            <option value={o} selected={String(o) === pv(r.c.id, String(p.name))}>{o}</option>
+                          {/each}
+                        </select>
+                      {/if}
+                      {#if p.type !== 'choice'}
+                        <input class="inp " class:err={valErr()} type="text" data-p={p.name}
+                          value={pv(r.c.id, String(p.name))}
+                          on:input={onParamInput}>
+                      {/if}
+                      <span class="hint" data-ph={p.name}>{pi === 0 && valErr() ? valHint() : ''}</span>
+                    </div></div>
+                  {/each}
+                  <div class="cmd-code">示例：{(r.d.example || []).join('  →  ')}</div>
+                  {#if (r.d.results || []).length}
+                    <div class="cmd-meta">返回：{(r.d.results || []).join(' / ')}</div>
+                  {/if}
+                  <div class="cmd-actions">
+                    {#each actList(r.d) as ab}
+                      <button class="ghost-btn" data-mode={ab.mode} on:click={onAct}>{ab.text}</button>
+                    {/each}
+                  </div>
+                {/if}
+              </div>
+            </div>
+          {/each}
+        {/if}
+      </div>
+    </section>
+
+    {#if dlg().open && dlg().id==='editCmd'}
+      <div class="modal-layer">
+        <div class="modal-backdrop" on:click={closeDlg}></div>
+        <div class="modal">
+          <div class="modal-head">
+            <h3>{dlg().title}</h3>
+            <button class="icon-btn" on:click={closeDlg}>✕</button>
+          </div>
+          <div class="modal-body">
+            <div class="form-grid">
+              <div class="field"><label>指令 ID（英文，唯一）</label>
+                <input class="inp" id="cId" bind:value={cId} disabled={!!editId()}></div>
+              <div class="field"><label>名称/别名</label>
+                <input class="inp" id="cName" bind:value={cName}></div>
+              <div class="field"><label>分类</label>
+                <select class="sel" id="cCat" bind:value={cCat} on:change={onCatChange}
+                  style="display:{cCat()==='__custom__' ? 'none' : ''}">
+                  {#each bootCats() as cg}
+                    <option value={catIdOf(cg)}>{catLabel(cg)}</option>
+                  {/each}
+                  <option value="__custom__">＋ 自定义…</option>
+                </select>
+                <input class="inp" id="cCatCustom" placeholder="输入新分类名称，回车确认"
+                  style="display:{cCat()==='__custom__' ? '' : 'none'}" bind:value={cCatCustom}></div>
+              <div class="field field-wide"><label>一句话说明</label>
+                <input class="inp" id="cSum" bind:value={cSum}></div>
+              <div class="field field-wide"><label>详细描述</label>
+                <textarea class="inp" id="cDesc" rows="3" bind:value={cDesc}></textarea></div>
+              <div class="field"><label>模式（逗号分隔：set/get/run/help）</label>
+                <input class="inp" id="cModes" bind:value={cModes}></div>
+              <div class="field"><label>指令间隔（秒）</label>
+                <input class="inp" id="cDelay" type="number" step="0.05" bind:value={cDelay}></div>
+            </div>
+            <div class="field" style="margin-top:10px"><label>参数定义（JSON 数组）</label>
+              <textarea class="inp mono" id="cParams" rows="4" placeholder={'[{"name":"value","desc":"值","type":"text"}]'} bind:value={cParams}></textarea></div>
+            <div class="field" style="margin-top:8px"><label>示例（JSON 数组）</label>
+              <textarea class="inp mono" id="cExample" rows="3" placeholder={'["AT+VER=?"]'} bind:value={cExample}></textarea></div>
+            <div class="field" style="margin-top:8px"><label>可能返回（JSON 数组）</label>
+              <textarea class="inp mono" id="cResults" rows="3" bind:value={cResults}></textarea></div>
+          </div>
+          <div class="modal-foot">
+            <button class="ghost-btn" on:click={closeDlg}>取消</button>
+            <button class="primary-btn" on:click={saveCmd}>保存</button>
+          </div>
+        </div>
+      </div>
+    {/if}
+
+    {#if dlg().open && dlg().id==='delCmd'}
+      <div class="modal-layer">
+        <div class="modal-backdrop" on:click={closeDlg}></div>
+        <div class="modal">
+          <div class="modal-head">
+            <h3>{dlg().title}</h3>
+            <button class="icon-btn" on:click={closeDlg}>✕</button>
+          </div>
+          <div class="modal-body">
+            <p>确定删除指令「{delId()}」？</p>
+          </div>
+          <div class="modal-foot">
+            <button class="ghost-btn" on:click={closeDlg}>取消</button>
+            <button class="primary-btn" on:click={confirmDelete}>删除</button>
+          </div>
+        </div>
+      </div>
+    {/if}
+
+    {#if dlg().open && dlg().id==='confirmSend'}
+      <div class="modal-layer">
+        <div class="modal-backdrop" on:click={closeDlg}></div>
+        <div class="modal">
+          <div class="modal-head">
+            <h3>{dlg().title}</h3>
+            <button class="icon-btn" on:click={closeDlg}>✕</button>
+          </div>
+          <div class="modal-body">
+            <p>该指令可能导致模组复位或擦除上下文：</p>
+            <div class="cmd-code">{sendCmd()}</div>
+          </div>
+          <div class="modal-foot">
+            <button class="ghost-btn" on:click={closeDlg}>取消</button>
+            <button class="primary-btn" on:click={confirmSend}>发送</button>
+          </div>
+        </div>
+      </div>
+    {/if}

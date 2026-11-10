@@ -1,0 +1,262 @@
+<script>
+  // ErrCodesView - 1:1 port of index.html #page-errcodes + the matching app.js
+  // logic (renderErrCodes / paintErrCodes / paintErrSource / errAddDialog /
+  // errEditDialog / btnErrSource info modal / 还原默认 confirm).
+  // Contract (docs/contract.md v3): `s` is the shell's live state GETTER -
+  // read `s()` everywhere; onSet/onCall/onToast/onGoto stay plain function
+  // props. Prop declarations use `export let x = null as any` so rosezm's
+  // extractExports binds the prop.
+  import Dialog from './Dialog.rose';
+  export let s = null as any;
+  export let onSet = null as any;
+  export let onCall = null as any;
+  export let onToast = null as any;
+  export let onGoto = null as any;
+
+  // --- view-local state (read with x(), write ONLY $setState('x', v)) ---
+  let errCodes = $state<any[]>([]);
+  let errInfo = $state<any>(null);
+  let errKw = $state('');
+  let loadedProfile = $state<any>(null);
+  let dlg = $state({ open: false, id: '', title: '' });
+
+  // shared fields for 新增 / 编辑 dialogs
+  let fCode = $state('');
+  let fSev = $state('err');
+  let fType = $state('status');
+  let fMeaning = $state('');
+  let fHint = $state('');
+  let editIdx = $state(-1);
+
+  function boot(): any { return (s && s().boot) || null; }
+
+  // ---- load: follows the active profile (original renderErrCodes in renderAll) ----
+  async function refreshErrs() {
+    let r: any = null;
+    try { r = await onCall('get_error_codes'); } catch (e) { r = null; }
+    if (r && r.ok) {
+      const codes = r.codes || [];
+      const info = r.info || null;
+      $setState('errCodes', codes);
+      $setState('errInfo', info);
+    }
+  }
+
+  $effect(() => {
+    const lp = loadedProfile();
+    const b = s && s().boot;
+    if (!b) return;
+    const pid = b.profile_id == null ? '' : String(b.profile_id);
+    if (pid === lp) return;
+    $setState('loadedProfile', pid);
+    void refreshErrs();
+  });
+
+  // ---- paint (search filters code + meaning + hint, uppercased like the original) ----
+  function filteredCodes(): any[] {
+    const list = errCodes() || [];
+    const kw = String(errKw() || '').trim().toUpperCase();
+    if (!kw) return list;
+    return list.filter((c: any) =>
+      (String(c.code || '') + String(c.meaning || '') + String(c.hint || '')).toUpperCase().indexOf(kw) >= 0);
+  }
+  function absIdx(c: any): number { return (errCodes() || []).indexOf(c); }
+  function sevName(sev: string): string {
+    const m: any = { ok: '正常', info: '提示', warn: '警告', err: '错误', fatal: '严重' };
+    return m[sev] || sev;
+  }
+  function typeLabel(t: string): string { return t === 'event' ? '事件' : '状态码'; }
+  function countText(): string {
+    const list = errCodes() || [];
+    const inf = errInfo();
+    return '共 ' + list.length + ' 个错误码 / 事件' +
+      (inf && inf.source === 'custom' ? '（自定义库）' : '');
+  }
+  function sourceText(): string {
+    const inf = errInfo();
+    if (!inf) return '来源：--';
+    return '来源：' + (inf.source === 'custom' ? '自定义（本配置集）' : '固件默认') +
+      ' · ' + (inf.count || 0) + ' 条';
+  }
+  function sourceTitle(): string {
+    const inf = errInfo();
+    if (!inf) return '错误码库跟随当前配置集切换';
+    return '错误码库跟随当前配置集（' + (inf.profile || '-') + '）\n' + (inf.file || '');
+  }
+
+  // ---- dialog plumbing (every footer click closes, like the original modal()) ----
+  function patchDlg(o: any) { const next = { ...dlg(), ...o }; $setState('dlg', next);
+    try { document.dispatchEvent(new CustomEvent('rosezm:dialog-sync', { detail: { reopen: next.open === true, key: 'errcodes' } })); } catch (e) { /* noop */ } }
+  function closeDlg() { const next = { open: false, id: '', title: '' }; $setState('dlg', next);
+    try { document.dispatchEvent(new CustomEvent('rosezm:dialog-sync')); } catch (e) { /* noop */ } }
+
+  function openErrSource() {
+    if (!errInfo()) return;
+    patchDlg({ open: true, id: 'errSource', title: '错误码库来源' });
+  }
+
+  function openErrNew() {
+    $setState('fCode', '');
+    $setState('fSev', 'err');
+    $setState('fType', 'status');
+    $setState('fMeaning', '');
+    $setState('fHint', '');
+    $setState('editIdx', -1);
+    patchDlg({ open: true, id: 'errNew', title: '新增错误码' });
+  }
+
+  function openErrEdit(idx: number) {
+    const c = (errCodes() || [])[idx];
+    if (!c) return;
+    const code = String(c.code || '');
+    const sev = String(c.severity || 'err');
+    const ty = String(c.type || 'status');
+    const mean = String(c.meaning || '');
+    const hint = String(c.hint || '');
+    $setState('fCode', code);
+    $setState('fSev', sev);
+    $setState('fType', ty);
+    $setState('fMeaning', mean);
+    $setState('fHint', hint);
+    $setState('editIdx', idx);
+    patchDlg({ open: true, id: 'errEdit', title: '编辑错误码' });
+  }
+
+  async function saveErrForm() {
+    const isNew = dlg().id === 'errNew';
+    const code = String(fCode() || '').trim();
+    closeDlg();
+    if (!code) { onToast('错误码不能为空', 'warn'); return; }
+    const entry = {
+      code,
+      severity: fSev(),
+      type: fType(),
+      meaning: String(fMeaning() || '').trim(),
+      hint: String(fHint() || '').trim(),
+    };
+    const list = (errCodes() || []).slice();
+    if (isNew) list.push(entry);
+    else {
+      const i = editIdx();
+      if (i >= 0 && i < list.length) list[i] = entry;
+    }
+    const r = await onCall('save_error_codes', { codes: list });
+    if (r && r.ok) {
+      const codes = r.codes || list;
+      const info = r.info || errInfo();
+      $setState('errCodes', codes);
+      $setState('errInfo', info);
+      onToast(isNew ? '已新增错误码 ' + code : '已更新 ' + code, 'ok');
+    } else onToast((r && r.error) || '保存失败', 'err');
+  }
+
+  async function delErrAt(idx: number) {
+    const list = (errCodes() || []).slice();
+    if (!(idx >= 0 && idx < list.length)) return;
+    list.splice(idx, 1);
+    $setState('errCodes', list);
+    const r = await onCall('save_error_codes', { codes: list });
+    if (r && r.ok) {
+      const codes = r.codes || list;
+      const info = r.info || errInfo();
+      $setState('errCodes', codes);
+      $setState('errInfo', info);
+      onToast('已删除该错误码', 'ok');
+    } else onToast((r && r.error) || '保存失败', 'err');
+  }
+
+  function openErrReset() { patchDlg({ open: true, id: 'errReset', title: '还原默认错误码库' }); }
+
+  async function confirmErrReset() {
+    closeDlg();
+    const r = await onCall('reset_error_codes');
+    if (r && r.ok) {
+      const codes = r.codes || [];
+      const info = r.info || null;
+      $setState('errCodes', codes);
+      $setState('errInfo', info);
+      onToast('已还原为默认错误码库', 'ok');
+    } else onToast((r && r.error) || '还原失败', 'err');
+  }
+
+  // Esc (shell) resets this view's local dialog state so a later open is a
+  // real false -> true transition; the Dialog child keeps its own latch.
+  onMount(() => {
+    const __resetDlg = () => { $setState('dlg', { open: false, id: '', title: '' }); };
+    document.addEventListener('rosezm:dialog-reset', __resetDlg);
+    onCleanup(() => document.removeEventListener('rosezm:dialog-reset', __resetDlg));
+  });
+</script>
+
+    <section class="page " class:active={s && s().page==='errcodes'} id="page-errcodes">
+      <div class="page-head">
+        <h1>错误码库</h1>
+        <p class="page-sub" id="errCount">{countText()}</p>
+        <div class="head-actions">
+          <button class="ghost-btn" id="btnErrSource" title={() => sourceTitle()} on:click={openErrSource}>{sourceText()}</button>
+          <button class="ghost-btn" id="btnErrAdd" title="向当前配置集的错误码库新增条目" on:click={openErrNew}>
+            <span data-icon="plus"></span>新增</button>
+          <button class="ghost-btn" id="btnErrReset" title="删除本配置集的自定义错误码库，还原为固件风格默认" on:click={openErrReset}>
+            <span data-icon="reset"></span>还原默认</button>
+        </div>
+      </div>
+      <div class="toolbar">
+        <div class="search-box">
+          <span class="search-ico" data-icon="search"></span>
+          <input type="text" id="errSearch" placeholder="搜索错误码 / 含义 / 处置建议" bind:value={errKw}>
+        </div>
+      </div>
+      <div class="err-list" id="errList">
+        {#each filteredCodes() as c, ci (ci)}
+        <div class={'err-card sev-' + c.severity} style="animation-delay:{ci * 30}ms">
+          <div class="err-top"><span class="err-code mono">{c.code}</span><span class="err-sev">{sevName(c.severity)}</span><span class="err-type">{typeLabel(c.type)}</span><button class="err-edit ghost-btn" title="编辑该条目" on:click={() => openErrEdit(absIdx(c))}><i class="lci" data-lucide="pencil"></i></button>
+            <button class="err-del ghost-btn" title="从当前配置集错误码库删除" on:click={() => delErrAt(absIdx(c))}><i class="lci" data-lucide="trash-2"></i></button></div>
+          <div class="err-meaning">{c.meaning}</div>
+          {#if c.hint}<div class="err-hint"><span class="log-dir sys">建议</span>{c.hint}</div>{/if}
+        </div>
+        {/each}
+        {#if !filteredCodes().length}
+        <div class="empty">没有匹配的错误码</div>
+        {/if}
+      </div>
+
+      <Dialog dialogKey="errcodes" open={() => dlg().open && (dlg().id === 'errNew' || dlg().id === 'errEdit')} title={() => dlg().title} onClose={closeDlg}>
+        <div class="field"><label>错误码 / 事件关键字</label>
+          <input class="inp" placeholder="如 ERR+SEND:03" bind:value={fCode}></div>
+        <div class="field"><label>级别</label><select class="inp" bind:value={fSev}>
+          <option value="err">错误</option>
+          <option value="warn">警告</option>
+          <option value="fatal">严重</option>
+          <option value="ok">正常</option>
+          <option value="info">提示</option></select></div>
+        <div class="field"><label>类型</label><select class="inp" bind:value={fType}>
+          <option value="status">状态码</option>
+          <option value="event">事件</option></select></div>
+        <div class="field"><label>含义</label>
+          <input class="inp" placeholder="这条错误代表什么" bind:value={fMeaning}></div>
+        <div class="field"><label>处置建议</label>
+          <input class="inp" placeholder="遇到时应该怎么处理" bind:value={fHint}></div>
+        {#if dlg().id === 'errNew'}
+        <span class="hint">保存到当前配置集（{(errInfo() && errInfo().profile) || '-'}）的自定义错误码库，不影响其他配置集。</span>
+        {/if}
+        {#if dlg().id === 'errEdit'}
+        <span class="hint">修改默认库条目会自动把整个库保存为当前配置集的自定义库。</span>
+        {/if}
+        <button class="ghost-btn" slot="foot" on:click={closeDlg}>取消</button>
+        <button class="primary-btn" slot="foot" on:click={saveErrForm}>保存</button>
+      </Dialog>
+
+      <Dialog dialogKey="errcodes" open={() => dlg().open && dlg().id === 'errReset'} title={() => dlg().title} onClose={closeDlg}>
+        <p>将删除当前配置集的自定义错误码库，还原为「{(errInfo() && errInfo().style) || ''}」固件风格默认内容。</p>
+        <button class="ghost-btn" slot="foot" on:click={closeDlg}>取消</button>
+        <button class="danger-btn" slot="foot" on:click={confirmErrReset}>还原</button>
+      </Dialog>
+
+      <Dialog dialogKey="errcodes" open={() => dlg().open && dlg().id === 'errSource'} title={() => dlg().title} onClose={closeDlg}>
+        <p>当前配置集：<b>{(errInfo() && errInfo().profile) || '-'}</b>（{(errInfo() && errInfo().style) || ''} 固件风格）</p>
+        <p>来源：{(errInfo() && errInfo().source) === 'custom' ? '本配置集自定义错误码库' : '固件风格默认库'}，共 {(errInfo() && errInfo().count) || 0} 条。</p>
+        <p class="hint mono" style="word-break:break-all">{(errInfo() && errInfo().file) || ''}</p>
+        <p class="hint">切换配置集时错误码库会自动跟随切换；新增/删除会写入上面的自定义文件。</p>
+        <button class="ghost-btn" slot="foot" on:click={closeDlg}>关闭</button>
+      </Dialog>
+    </section>
