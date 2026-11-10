@@ -543,9 +543,39 @@
       // 分组定位写成 inline style：框架的 scoped 样式引擎对跨层选择器
       // （html.is-mac #btnX）匹配但不参与布局，CSS 里的 order/absolute
       // 都不生效；inline style 是唯一稳定路径（实测通过）。
+      const place = (id: string, side: 'left' | 'right', offset: number) => {
+        const b = document.getElementById(id) as HTMLElement | null;
+        if (!b) return;
+        b.style.position = 'absolute';
+        b.style.top = '0';
+        b.style.height = '36px';
+        b.style.width = '40px';
+        b.style.minWidth = '40px';
+        b.style.maxWidth = '40px';
+        b.style.flex = '0 0 40px';
+        b.style.boxSizing = 'border-box';
+        b.style.margin = '0';
+        b.style.padding = '0';
+        b.style[side] = offset + 'px';
+        b.style.pointerEvents = 'auto';
+      };
       const actions = document.getElementById('titlebarActions');
-      if (isMac && actions) {
-        actions.style.flexDirection = 'row-reverse';
+      if (isMac) {
+        if (actions) {
+          actions.style.position = 'absolute';
+          actions.style.inset = '0';
+          actions.style.display = 'block';
+          actions.style.pointerEvents = 'none';
+        }
+        // 视觉顺序（左→右）：关闭、最大化、最小化 …… 帮助、置顶
+        // 五个按钮统一 40px：左侧 0/40/80，右侧 帮助 right:40、置顶 right:0。
+        place('btnClose', 'left', 0);
+        place('btnMax', 'left', 40);
+        place('btnMin', 'left', 80);
+        place('btnHelp', 'right', 40);
+        place('btnPin', 'right', 0);
+        const drag = document.querySelector('.titlebar-drag') as HTMLElement | null;
+        if (drag) { drag.style.paddingLeft = '120px'; drag.style.paddingRight = '80px'; }
       }
     } catch (e) { /* noop */ }
   }
