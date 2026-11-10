@@ -1,0 +1,65 @@
+name: CI
+
+# Gates a local machine may not have: npm install (rosezm 0.2.2 from npm
+# compiler), front-end type-check and build, backend selftest (the
+# simulator link runs headless) and the PyInstaller pack itself - the
+# build is the only place the missing dist/ becomes a green run.
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install system dependencies (Linux webview)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgtk-3-dev libwebkit2gtk-4.1-dev gir1.2-webkit2-4.1 \
+            python3-dev libgirepository1.0-dev libcairo2-dev pkg-config
+
+      - name: Install node dependencies
+        run: npm ci
+
+      - name: Type-check the .rose sources
+        run: npm run check
+
+      - name: Build the front-end
+        run: npm run build
+
+      - name: Install python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pywebview pyserial Pillow "pygobject<3.51" pyinstaller
+
+      - name: Backend selftest
+        run: python main.py --selftest
+
+      - name: Pack the single-file executable
+        run: python build.py
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: AT-Command-Debugger-linux-x64
+          path: dist/
+          if-no-files-found: error
+          retention-days: 14

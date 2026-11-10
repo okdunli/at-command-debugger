@@ -113,7 +113,7 @@ Select a scenario to preview and run it below; variables are filled at click tim
 
 ```bash
 cd at-command-debugger
-npm install                  # installs the vendored rosezm compiler (file:vendor/rosezm) + tooling
+npm install                  # installs rosezm 0.2.2 from npm + tooling
 npm run build                # compile the front-end into dist/
 python main.py               # desktop app
 python main.py --browser --open   # browser mode
@@ -235,7 +235,6 @@ package.json / package-lock.json
 build.py / atcdbg.spec
 src/                        rosezm front-end sources (.rose pages + components)
 public/                     static assets synced into dist/ (icons, fonts, css)
-vendor/                     vendored rosezm compiler + runtime (file:vendor/rosezm)
 scripts/                    build-assets sync + smoke gates
 profiles/
 atcdbg/

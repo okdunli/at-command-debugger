@@ -9,14 +9,12 @@
     "serve": "rosezm serve",
     "check": "rosezm check",
     "assets": "node scripts/build-assets.mjs",
-    "build:local": "node vendor/rosezm/rosezm.mjs build && node scripts/build-assets.mjs",
-    "dev:local": "node vendor/rosezm/rosezm.mjs dev",
     "smoke": "node scripts/smoke.mjs",
     "smoke:live": "node scripts/smoke.mjs --live"
   },
   "dependencies": {
     "lucide": "^0.456.0",
-    "rosezm": "file:vendor/rosezm",
+    "rosezm": "0.2.2",
     "tsx": "^4.23.15"
   },
   "devDependencies": {

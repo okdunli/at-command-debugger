@@ -1,9 +1,0 @@
-{
-  "name": "rosezm",
-  "version": "0.4.0-vendored",
-  "type": "module",
-  "bin": { "rosezm": "rosezm.mjs" },
-  "dependencies": {
-    "esbuild": "^0.28.2"
-  }
-}

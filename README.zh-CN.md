@@ -109,7 +109,7 @@ AT指令调试台补齐这些缺口：
 
 ```bash
 cd at-command-debugger
-npm install                  # 安装内置 rosezm 编译器（file:vendor/rosezm）与工具链
+npm install                  # 从 npm 安装 rosezm 0.2.2 与工具链
 npm run build                # 前端编译到 dist/
 python main.py               # 桌面应用
 python main.py --browser --open   # 浏览器模式
@@ -215,7 +215,6 @@ package.json / package-lock.json
 build.py / atcdbg.spec
 src/                        rosezm 前端源码（.rose 页面 + 组件）
 public/                     静态资源（同步进 dist/：图标、字体、css）
-vendor/                     内置 rosezm 编译器 + 运行时（file:vendor/rosezm）
 scripts/                    资源同步 + smoke 门禁
 profiles/
 atcdbg/
