@@ -8,6 +8,14 @@ exports/
 Thumbs.db
 .DS_Store
 
+# rosezm / node 构建链
+node_modules/
+.env
+.rosezm-build/
+.rosezm-dev/
+.rosezm-export/
+src/.rosezm/
+
 # 软件配置（运行时可改，不随配置集提交）
 profiles/config.json
 profiles/probe.txt

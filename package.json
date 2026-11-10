@@ -1,0 +1,25 @@
+{
+  "name": "at-command-debugger-rosezm",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "rosezm dev",
+    "build": "rosezm build && node scripts/build-assets.mjs",
+    "preview": "rosezm preview",
+    "serve": "rosezm serve",
+    "check": "rosezm check",
+    "assets": "node scripts/build-assets.mjs",
+    "build:local": "node vendor/rosezm/rosezm.mjs build && node scripts/build-assets.mjs",
+    "dev:local": "node vendor/rosezm/rosezm.mjs dev",
+    "smoke": "node scripts/smoke.mjs",
+    "smoke:live": "node scripts/smoke.mjs --live"
+  },
+  "dependencies": {
+    "lucide": "^0.456.0",
+    "rosezm": "file:vendor/rosezm",
+    "tsx": "^4.23.15"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0"
+  }
+}
