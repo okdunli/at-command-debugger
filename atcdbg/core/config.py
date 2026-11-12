@@ -74,6 +74,27 @@ def _deep_merge(base: dict, patch: dict) -> dict:
             out[key] = value
     return out
 
+
+def merge_profile_defaults(data: dict, profile: dict) -> dict:
+    """把配置集声明的 serial_defaults / protocol_defaults 并入运行时配置。
+
+    仅覆盖仍等于内置默认值的项，用户手动改过的串口参数保持原样。
+    shortcut: 以「值等于 DEFAULTS」判定用户未自定义；上一份配置集的默认值
+    落盘后，切换配置集时不会再次覆盖，需在设置里手动改。
+    """
+    for section, key in (("serial", "serial_defaults"),
+                         ("protocol", "protocol_defaults")):
+        defaults = (profile or {}).get(key)
+        if not isinstance(defaults, dict):
+            continue
+        cur = data.setdefault(section, {})
+        builtin = DEFAULTS.get(section, {})
+        for name, value in defaults.items():
+            if name in builtin and cur.get(name, builtin[name]) == builtin[name]:
+                cur[name] = value
+    return data
+
+
 class AppConfig:
 
     def __init__(self) -> None:

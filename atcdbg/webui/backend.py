@@ -13,7 +13,7 @@ from ..core import (commands, errorcodes, exporter, paths, presets, profiles,
                     quick, sessionlog, suites, winnative)
 from ..core import device_sim
 from ..core.buttons import ButtonsStore, replace_vars
-from ..core.config import AppConfig, DEFAULTS
+from ..core.config import AppConfig, DEFAULTS, merge_profile_defaults
 from ..core.device_sim import DeviceSimulator
 from ..core.protocol import text_to_hex
 from ..core import protocol as P
@@ -128,6 +128,9 @@ class Api:
                               self.profile.get("error_codes"))
         self.simulator._reset_state()
         self.buttons.switch_profile(target, self.profile.get("buttons") or [])
+        # 配置集声明的串口/协议默认值（如 115200）此前从未生效，导致按内置
+        # 9600 打开真实设备时整屏乱码；用户自定义过的参数不被覆盖。
+        merge_profile_defaults(self.cfg.data, self.profile)
         if persist and target:
             self.cfg.set("profile", "active", target)
         return {"ok": True, "profile": self.profile_meta(target)}
