@@ -1,241 +1,234 @@
 <div align="center">
-<img alt="AT Command Debugger" src="icon.svg" height="128">
 
-<h1>AT Command Debugger</h1>
+<img src="icon.svg" width="112" alt="AT指令调试台">
 
-[![中文](https://img.shields.io/badge/中文-README-blue?style=for-the-badge&labelColor=000000)](README.zh-CN.md)
+# AT指令调试台
+
+### 任意 AT 模组，一处调试搞定。
+
+**选场景 → 填参数 → 预览指令序列 → 一键执行 → 导出报告。**<br>
+指令集由声明式 JSON 配置集描述，换模组只改配置、不动一行代码。内置虚拟设备，不接硬件也能跑通全流程。
+
 [![License](https://img.shields.io/badge/license-Apache--2.0-green?style=for-the-badge&labelColor=000000)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-58A6FF?style=for-the-badge&labelColor=000000)]()
+[![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=for-the-badge&labelColor=000000&logo=python&logoColor=white)]()
+
+[English](README.en.md) · **简体中文**
+
+<br>
+
+<img src="screenshot/01-dashboard.png" width="900" alt="仪表盘：连接状态、快捷操作与最近一次执行结果">
+
+<sub>连接内置虚拟设备（SIM）后的仪表盘：链路状态、场景与用例统计、快捷操作和最近一次执行结果。</sub>
 
 </div>
 
-A cross-platform (Windows / macOS / Linux) desktop host tool for exercising the AT command set of embedded modules — any AT-based firmware. Command sets are described by declarative JSON profiles, so switching modules never means changing code. It turns "open a serial terminal,
-  
-type commands by hand, squint at the replies" into a form-driven workflow: pick a scenario →
-  
-fill in the parameters → preview the command sequence → run it in one click → export the test report.
+<br>
 
-Tech stack: **Python + PyWebView (native WebView) + vanilla HTML/CSS/JS** —
-  
-one codebase, three desktop platforms; a `--browser` mode that runs in a plain browser is also included.
+## 它适合你吗？
 
-## Overview
+手动测一块模组的 AT 固件，要记住几十条指令的参数范围与先后顺序；在裸终端里逐条敲，慢、易错，事后也没有规范记录可查。AT指令调试台把这些收进一个桌面应用：
 
-Testing a module's AT firmware by hand means remembering the parameter ranges and ordering of dozens of commands…
-  
-Typing them one by one in a raw terminal is slow, error-prone, and leaves no proper record to look back on.
+- **指令集是数据，不是代码**：整套指令、分类、场景、套件、按钮、错误码与模拟器应答都写在外部 `profile.json`，切换配置集应用立刻变成另一款模组的专用上位机。
+- **参数在进串口前就被拦下**：范围 / HEX / 枚举 / 正则校验，配示例与帮助，不用靠猜。
+- **流程可复现**：一键配置按正确顺序下发整段指令；测试套件带负向用例与回读校验，可存基线、复测自动比对差异、导出报告。
+- **没硬件也能跑**：内置设备模拟器（`SIM` 端口）实现指令应答、收发与事件模型，演示、开发和自动化测试都不需要模组。
 
-AT Command Debugger fills those gaps:
+如果你只偶尔敲一条 `AT` 看有没有回 `OK`，系统自带的串口工具就够了；要反复调参、回归测试或适配多款模组，它才派得上用场。
 
-- a complete command library with parameter validation, examples and help;
-- one-click scenario presets that emit a whole configuration sequence in the right order;
-- runnable test suites (including negative cases and read-back verification) with exportable reports;
-- a live serial terminal: colored TX/RX logs, HEX view, loop sending, auto-reply;
-- a built-in device simulator, so the full workflow runs without any hardware;
-- OEM profiles externalize the entire command set as JSON — adapting a new module means editing JSON, not Python.
+技术栈：**Python + PyWebView（原生 WebView）+ Rosezm / 原生 HTML/CSS/JS**，一套代码编译三端；也支持 `--browser` 模式直接用浏览器访问。
 
----
+## 快速开始
 
-## Screenshots
-
-**Dashboard** — connection status, command / preset / suite statistics, quick actions and pinned favorites; in browser mode the HTTP service address is shown.
-
-![Dashboard](screenshot/01-dashboard.png)
-
-**One-click presets** — scenario cards: fill the form → preview the command sequence → run step by step or in one go, with pinning and reordering.
-
-![One-click presets](screenshot/02-presets.png)
-
-Select a scenario to preview and run it below; variables are filled at click time:
-
-![Preset detail](screenshot/02b-preset-detail.png)
-
-**Command library** — declarative command reference, filter by category, dangerous commands flagged, editable in-app.
-
-![Command library](screenshot/03-commands.png)
-
-**Custom buttons** — turn frequent commands into buttons, group them, `{variable}` placeholders filled at click time.
-
-![Custom buttons](screenshot/04-buttons.png)
-
-**Test suites** — group and tick cases to run, save baselines, auto-diff on re-run, export scripts and reports.
-
-![Test suites](screenshot/05-suites.png)
-
-**Serial terminal** — TX/RX coloring, timestamps, loop sending, auto-reply, macro recording; the screenshot shows real traffic against the built-in virtual device (SIM).
-
-![Serial terminal](screenshot/06-terminal.png)
-
-**Error-code dictionary** — on a matching reply code, show meaning, severity and suggested fix; maintainable in-app.
-
-![Error-code dictionary](screenshot/07-errcodes.png)
-
-**Run logs** — connection events, profile switches, task progress and errors, filterable by category and exportable.
-
-![Run logs](screenshot/08-logs.png)
-
-**Settings** — four sections: serial & protocol, UI & behavior, profiles (OEM), data & interface.
-
-![Settings](screenshot/09-settings.png)
-
----
-
-## Features
-
-| Module                | Description                                                                                                                                                                                                                                                                                                                                                                                                            |
-| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| One-click presets     | 10 scenario templates (device health check / network provisioning / parameter configuration / message send-receive / factory reset …): fill in the form → preview the command sequence → run step by step or in one go                                                                                                                                                                                                 |
-| Command library       | Declarative command reference: parameter validation (range / HEX / choice / regex), examples and help; invalid values are caught before they reach the serial port                                                                                                                                                                                                                                                     |
-| Test suites           | 7 categories, 45 cases, including negative cases (wrong types, out-of-range values) and read-back verification (write, then read back and compare); runs can be partial, baselines can be saved and compared automatically on re-runs, results export to Markdown / CSV / HTML / JSON                                                                                                                                  |
-| Error-code dictionary | Per-profile reply-code dictionary: when the terminal hits a known code it shows meaning, severity and suggested fix; editable (add / edit / delete / reorder) inside the app                                                                                                                                                                                                                                           |
-| Custom buttons        | Frequently used commands become buttons: multi-command sequences, groups, colors and icons, `{variable}` placeholders filled at click time; persisted per profile, with import/export                                                                                                                                                                                                                                  |
-| Serial terminal       | TX / RX / system-message coloring, timestamps, command history (arrow keys), text / HEX dual view, loop sending (timed resend, synchronized between desktop and browser clients), keyword auto-reply, multi-line bulk sending (`#` comments and WAIT supported), macro recording, RSSI signal trend chart, log bookmarks, byte counter reset; serial parameter changes take effect immediately (silent auto-reconnect) |
-| Pin control           | DTR / RTS live toggles in the serial bar — diagnoses the classic "works in another tool, silent here" problem caused by pin levels at port open resetting the module or dropping it into the bootloader                                                                                                                                                                                                                |
-| Device simulator      | Built-in device simulator (`SIM` port) implements command replies, message exchange and the event model; demos, development and automated tests all run without hardware                                                                                                                                                                                                                                               |
-| Profiles (OEM)        | The complete "personality" of a module — brand text, command library, categories, presets, suites, default buttons, simulator behaviour — all in an external `profile.json`; switch from the title-bar dropdown and the app instantly becomes a dedicated tool for that module, without changing a line of code                                                                                                        |
-| Test reports          | Suite runs export to Markdown / CSV / HTML / JSON; terminal logs export to file; configuration and button sets export/import as JSON packages                                                                                                                                                                                                                                                                          |
-| Modern interface      | Frameless window with native drag / 8-way resize, geometry remembered across sessions, maximize fits the work area, window opacity and always-on-top toggles; dark / light themes, four preset accent colors + custom color, UI scale 85–115 %, splash and transition animations; presets / buttons / suites can be pinned to the home dashboard, profiles switchable in the title bar                                 |
-
----
-
-## Getting started
-
-### Requirements
-
-| Item     | Requirement                                                                                                           |
-| -------- | --------------------------------------------------------------------------------------------------------------------- |
-| OS       | Windows 10+ / macOS / Linux                                                                                           |
-| Python   | 3.10 or newer                                                                                                         |
-| GUI      | Windows: Edge WebView2 (preinstalled on Win 11); macOS: WebKit (built in); Linux: WebKitGTK (`libwebkit2gtk-4.0-dev`) |
-| Hardware | none — the built-in simulator covers the full workflow; a USB-serial adapter plus the module for real tests           |
-
-### Installation
+**1 · 安装**。克隆仓库后装依赖并编译前端：
 
 ```bash
 cd at-command-debugger
-npm install                  # installs rosezm 0.2.2 from npm + tooling
-npm run build                # compile the front-end into dist/
-python main.py               # desktop app
-python main.py --browser --open   # browser mode
-python main.py --selftest    # self-check (includes the simulator link)
+npm install                  # 从 npm 安装 rosezm 0.2.2 与工具链
+npm run build                # 前端编译到 dist/
+python main.py               # 启动桌面应用
+python main.py --browser --open   # 或：浏览器模式
+python main.py --selftest    # 自检（含模拟器链路）
 ```
 
-For front-end development with hot reload: keep `python main.py --browser` running in one terminal and `npm run dev` in another; type-check the .rose sources with `npm run check`. For a Python-free single-file executable see "Packaging" below.
+<sub>Windows 需要 Edge WebView2（Win11 自带），macOS 用内置 WebKit，Linux 需要 `libwebkit2gtk-4.0-dev`。Python 3.10+。硬件不是必需项——内置模拟器可跑通全流程，真机测试才需要 USB 串口 + 模组。</sub>
 
-### Command-line options
+**2 · 连接设备**。串口栏选端口（或直接选 `SIM` 连虚拟设备），波特率按固件填写，点「连接」。
 
-| Option              | Description                                                                                                    |
-| ------------------- | -------------------------------------------------------------------------------------------------------------- |
-| *(none)*            | Start the desktop app (default)                                                                                |
-| `--browser`         | No desktop window; serve the UI over local HTTP only                                                           |
-| `--open`            | With `--browser`: open the system browser automatically                                                        |
-| `--host` / `--port` | HTTP bind address / port (0 = auto) in browser mode                                                            |
-| `--no-http`         | Desktop mode without the auxiliary HTTP service                                                                |
-| `--debug`           | Open the WebView developer tools                                                                               |
-| `--verbose`         | Verbose logging                                                                                                |
-| `--selftest`        | Run the self-check and exit                                                                                    |
-| `--instance NAME`   | Multi-instance mode: dedicated data directory and lock, so several windows can drive different modules at once |
+**3 · 跑一个场景**。打开「一键配置」，选 *设备体检*，填表 → 预览指令序列 → 执行。
 
+**4 · 导出报告**。打开「测试套件」，勾选一类用例运行，结果可导出 Markdown / CSV / HTML / JSON。
 
-### First run
+前端热更新：一个终端跑 `python main.py --browser`，另一个跑 `npm run dev`；`npm run check` 类型检查 `.rose` 源码。
 
-1. Pick a serial port in the serial bar — or `SIM` for the built-in virtual device — set the baud rate to match your firmware, click **Connect**.
-2. Open **Presets**, choose *Device health check*, fill in the form, preview, run.
-3. Open **Suites**, tick a category, run it, export the report.
+## 功能
 
----
+### 一键配置
 
-## Profiles (OEM mechanism)
+10 个场景模板（设备体检 / OTAA 入网 / ABP 激活 / 上行发送 / Class C 下行 / 射频 PER 收发 / 恢复出厂等），场景卡片填表 → 预览指令序列 → 单步或一键执行，支持置顶与排序。字段支持联动、HEX 转换与条件步骤。
 
-**One profile = the complete "personality" of one module**: a single JSON file decides everything the app shows and sends. Two directories are merged, user directory winning on name clashes:
+<table>
+<tr>
+<td width="50%"><img width="100%" src="screenshot/02-presets.png" alt="一键配置场景列表"></td>
+<td width="50%"><img width="100%" src="screenshot/02b-preset-detail.png" alt="选中场景后预览并执行"></td>
+</tr>
+</table>
+
+### 指令库与错误码库
+
+指令库按分类过滤，带参数校验、示例与帮助，危险指令单独标记，应用内可直接增删改；返回码命中后，错误码库给出含义、严重级别与处置建议，同样可在应用内维护。
+
+<table>
+<tr>
+<td width="50%"><img width="100%" src="screenshot/03-commands.png" alt="指令库"></td>
+<td width="50%"><img width="100%" src="screenshot/07-errcodes.png" alt="错误码库"></td>
+</tr>
+</table>
+
+### 常用功能与测试套件
+
+常用指令固化成按钮：多指令序列、分组、颜色图标、`{变量}` 占位符点击时填入，按配置集持久化并支持导入导出。测试套件分 6 大类 23 个用例，分组勾选运行，支持保存基线、复测比对差异、导出脚本与报告。
+
+<table>
+<tr>
+<td width="50%"><img width="100%" src="screenshot/04-buttons.png" alt="常用功能按钮"></td>
+<td width="50%"><img width="100%" src="screenshot/05-suites.png" alt="测试套件与结果"></td>
+</tr>
+</table>
+
+### 串口终端
+
+TX / RX / 系统消息着色、时间戳、指令历史（↑↓）、文本 / HEX 双视图、循环发送、关键字自动应答、多行批量发送（支持 `#` 注释与 WAIT 等待）、宏录制、RSSI 信号监控趋势图、日志书签、字节计数清零；修改串口参数即时生效（自动静默重连）。
+
+<img src="screenshot/06-terminal.png" width="900" alt="串口终端：连接 SIM 虚拟设备后的真实收发日志">
+
+DTR / RTS 实时开关放在串口栏，用来排查「别的工具能收、本工具收不到」这类因打开瞬间引脚电平复位模组或进 bootloader 的问题。
+
+### 运行日志与设置
+
+运行日志把连接事件、配置切换、任务进度与错误统一留痕，可按类别过滤、导出；设置分串口与协议、界面与行为、配置集（OEM）、数据与接口四个分区。
+
+<table>
+<tr>
+<td width="50%"><img width="100%" src="screenshot/08-logs.png" alt="运行日志"></td>
+<td width="50%"><img width="100%" src="screenshot/09-settings.png" alt="设置"></td>
+</tr>
+</table>
+
+### 功能一览
+
+| 模块 | 说明 |
+| :-- | :-- |
+| **一键配置** | 10 个场景模板，填表 → 预览指令序列 → 单步或一键执行 |
+| **指令库** | 声明式指令手册：参数校验（范围 / HEX / 枚举 / 正则）、示例与帮助；非法参数在进入串口前就被拦下 |
+| **测试套件** | 6 大类 23 个用例，含负向用例与回读校验；可勾选部分运行，可保存基线、复测自动比对差异，结果导出 Markdown / CSV / HTML / JSON |
+| **错误码词典** | 按配置集维护返回码：终端命中后显示含义、严重级别与处置建议，应用内增删改排序 |
+| **自定义按钮** | 多指令序列、分组、颜色图标、`{变量}` 占位符；按配置集持久化，支持导入导出 |
+| **串口终端** | 着色日志、时间戳、历史、HEX 视图、循环发送、自动应答、批量发送、宏录制、RSSI 趋势、日志书签 |
+| **引脚控制** | DTR / RTS 实时开关，排查打开串口瞬间的电平复位问题 |
+| **虚拟设备** | 内置模拟器（`SIM` 端口），演示、开发与自动化测试都不需要硬件 |
+| **配置集（OEM）** | 一款模组的完整「人格」全在外部 `profile.json`；标题栏下拉切换，不改一行代码 |
+| **测试报告** | 套件结果导出 Markdown / CSV / HTML / JSON；终端日志、配置与按钮集 JSON 包导入导出 |
+| **现代化界面** | 无边框窗口原生拖动 / 八向缩放、几何位置跨会话记忆、窗口透明度与置顶；深浅主题、四种强调色 + 自定义色、界面缩放 85–115 %、开屏与过渡动画、首页看板置顶 |
+
+## 配置集（OEM 机制）
+
+**一个配置集 = 一款模组的完整「人格」**，一个 JSON 文件决定应用显示和发送的一切。双层目录合并，同名时用户目录优先：
 
 ```
-<app dir>/profiles/<id>/profile.json      built-in (external folder next to the executable, read-only)
-<data dir>/profiles/<id>/profile.json     user-created / imported (writable)
+<程序目录>/profiles/<id>/profile.json     内置（exe 同级外置目录，只读）
+<数据目录>/profiles/<id>/profile.json     用户自建 / 导入（可写，优先）
 ```
 
-A bundled example profile demonstrates every feature and makes a good starting point for new profiles.
+随附一份示例配置集，用于演示全部功能，也可作为新建配置集的起点。除 `id` / `name` 外全部可选，缺失自动走内置默认：`brand`、`subtitle`、`icon`、`version`、`doc`、`categories`、`commands`、`error_codes`、`presets`、`quick_actions`、`suites`、`buttons`、`device` 等。
 
-Every field except `id` / `name` is optional and falls back to built-in defaults: `brand`, `subtitle`,
-  
-`icon`, `version`, `doc`, `categories`, `commands`, `error_codes`, `presets`, `quick_actions`,
-  
-`suites`, `buttons`, `device`, etc.
+参数校验是可序列化的声明式描述（`{"type":"range","low":0,"high":9}`、`{"type":"hex","size":8}`、`{"type":"choice",...}`、`{"type":"any","of":[...]}`）；场景步骤是模板 + 过滤器插值（`{token|key:8}`、`{text|hex}`、`{x|default:5}`）；条件步骤支持 `when: "!debug" | "mode==1" | "a&&b" | "a||b"`。
 
-Parameter validation is a serializable declarative spec (`{"type":"range","low":0,"high":9}`,
-  
-`{"type":"hex","size":8}`, `{"type":"choice",...}`, `{"type":"any","of":[...]}`);
-  
-preset steps are templates with filter interpolation (`{token|key:8}`, `{text|hex}`,
-  
-`{x|default:5}`); conditional steps support
-  
-`when: "!debug" | "mode==1" | "a&&b" | "a||b"`.
+典型流程：直接在 设置 → 配置集 里可视化编辑（指令、场景、套件、错误码、首页置顶都可在应用内增删改与排序），或走 JSON 路线——复制内置 *Example 示例工程* → 导出 → 改 JSON → 导入 → 验证 → 放进 exe 同级的 `profiles/` 文件夹即为内置（打包版从程序目录外置读取；开发模式读项目根的 `profiles/`）。导出包带 `{"kind":"at-command-debugger-profile","format":1,...}` 标识。
 
-Typical workflow: edit visually in Settings → Profiles (commands, presets, suites, error codes and home
-  
-pinning are all editable and reorderable inside the app), or take the JSON route — duplicate the built-in
-  
-*Example* profile → export → edit the JSON → import → verify →
-  
-drop the folder into the `profiles/` directory next to the executable (frozen builds read it externally; dev mode reads the project-root `profiles/`). Exported packages carry
-  
-`{"kind":"at-command-debugger-profile","format":1,...}`.
+## 命令行参数
 
----
+| 参数 | 说明 |
+| :-- | :-- |
+| （无） | 启动桌面应用（默认） |
+| `--browser` | 不开桌面窗口，仅本地 HTTP 服务 |
+| `--open` | 配合 `--browser`：自动打开系统浏览器 |
+| `--host` / `--port` | 浏览器模式监听地址 / 端口（0=自动） |
+| `--no-http` | 桌面模式不启动辅助 HTTP 服务 |
+| `--debug` | 打开 WebView 开发者工具 |
+| `--verbose` | 详细日志 |
+| `--selftest` | 自检后退出 |
+| `--instance NAME` | 多实例：独立数据目录与锁，可同时开多个窗口分别控制不同设备 |
 
-## Data directory
+## 数据目录
 
-| Platform | Path                                    |
-| -------- | --------------------------------------- |
-| Windows  | `%APPDATA%\AT指令调试台`                     |
-| macOS    | `~/Library/Application Support/AT指令调试台` |
-| Linux    | `~/.local/share/AT指令调试台`                |
+全部数据跟随程序目录（绿色便携，三平台一致），无需安装、不写注册表：
 
-Place a `portable.txt` next to the executable for portable mode (data directory follows the binary).
+| 目录 / 文件 | 内容 |
+| :-- | :-- |
+| `profiles/config.json` | 全部应用配置（串口、协议、界面、窗口、行为） |
+| `profiles/<id>/profile.json` | 各配置集（指令库、场景、套件等） |
+| `profiles/<id>/buttons.json` | 各配置集的自定义按钮 |
+| `profiles/<id>/errorcodes.json` | 各配置集的错误码词典 |
+| `data/history/` | 发送历史（按天分文件） |
+| `data/exports/` | 报告与导出包 |
+| `data/backups/` | 配置换代备份 |
+| `data/baselines/` | 测试基线 |
+| `data/logs/debugger.log` | 滚动应用日志 |
 
-On first launch missing config files are generated automatically (incomplete `config.json` is topped up); if no profile exists, an example profile is generated automatically to keep the app usable out of the box.
+旧版的 `%APPDATA%` 数据目录只作一次性迁移读取：首次运行会把旧数据自动搬进程序目录，不覆盖已有文件。首次启动会自动生成缺失的配置文件（缺项自动补全）；没有任何配置集时会自动生成一份示例配置集，保证开箱可用。全部为纯 JSON / 文本，删掉即恢复默认。
 
-| File / directory    | Contents                                                                |
-| ------------------- | ----------------------------------------------------------------------- |
-| `config.json`       | Full application configuration (serial, protocol, UI, window, behavior) |
-| `profiles/<id>/`    | User profiles; `buttons.json` per profile (custom buttons)              |
-| `history.json`      | Sent-command history                                                    |
-| `export/`           | Reports and exported packages                                           |
-| `logs/debugger.log` | Rolling application log                                                 |
+## 常见问题
 
-Everything is plain JSON / text; delete it to return to defaults.
+<details>
+<summary><b>连上了，但什么都收不到、发不出</b></summary>
 
----
+<br>
 
-## FAQ
+几乎都是接线或模组状态问题，不是软件。按顺序检查：端口选的是真实 USB 串口（不是 ACPI 占位口）；TX↔RX 交叉连接且共地；模组已上电且未处于复位；波特率与固件一致；若模组进过透传模式，先发 `+++`（不带回车、前后各留 1 秒静默）退出再发 `AT`。模组 0 字节回传时，发送失败的提示里会带上这份排查清单。
 
-**Connected, but nothing is received or sent.**
-  
-Almost always wiring or module state, not the software. Check, in order: the port is the real USB-serial adapter (not an ACPI placeholder); TX↔RX are crossed and grounds are common; the module is powered and not held in reset; the baud rate matches the firmware; if the module was ever put into transparent mode, exit it with `+++` (no line ending, 1 s silence before and after) before sending `AT`. When the module returns zero bytes, the failed-send toast includes this checklist.
+</details>
 
-**The module resets or goes silent right after connecting.**
-  
-Some firmwares react to DTR/RTS levels at port open. Use the DTR / RTS toggles in the serial bar to flip the pin states after connecting.
+<details>
+<summary><b>一连上模组就复位 / 没声音了</b></summary>
 
-**The profile dropdown disappeared.**
-  
-The picker is hidden when only one profile exists; create or import one in Settings → Profiles.
+<br>
 
-**Browser mode shows a connection error.**
-  
-Another instance may hold the HTTP port. Set a fixed one with `--port`, or give the instance its own data directory with `--instance`.
+部分固件对打开串口瞬间的 DTR/RTS 电平敏感，连接后用串口栏的 DTR / RTS 开关翻转引脚电平即可。
 
----
+</details>
 
-## Project structure
+<details>
+<summary><b>配置集下拉不见了</b></summary>
+
+<br>
+
+只存在一个配置集时选择器自动隐藏；在 设置 → 配置集 新建或导入一个即可。
+
+</details>
+
+<details>
+<summary><b>浏览器模式报连接错误</b></summary>
+
+<br>
+
+可能是另一个实例占了 HTTP 端口，用 `--port` 固定端口，或用 `--instance` 给实例独立数据目录。
+
+</details>
+
+## 项目结构
+
+<details>
+<summary><b>展开目录结构与常见定制</b></summary>
+
+<br>
 
 ```
 package.json / package-lock.json
 build.py / atcdbg.spec
-src/                        rosezm front-end sources (.rose pages + components)
-public/                     static assets synced into dist/ (icons, fonts, css)
-scripts/                    build-assets sync + smoke gates
+src/                        rosezm 前端源码（.rose 页面 + 组件）
+public/                     静态资源（同步进 dist/：图标、字体、css）
+scripts/                    资源同步 + smoke 门禁
 profiles/
 atcdbg/
 ├── core/
@@ -258,24 +251,27 @@ atcdbg/
     └── backend.py
 ```
 
-Common customizations:
+- **适配新模组**：复制并修改 profile JSON——指令、场景、套件、按钮、模拟器应答表全是数据，不用写 Python。
+- **加一个后端接口**：在 `webui/backend.py` 加公共方法，前端经 `invoke` 统一调度即可调用。
+- **改前端**：编辑 `src/` 下的 `.rose` 源码；`npm run dev` 对着运行中的 `--browser` 后端热更新，`npm run check` 类型检查。
+- **验证环境**：`python main.py --selftest` 不开窗即可检验指令库、套件、模拟器链路与路径。
 
-- **Support another module**: duplicate and edit a profile JSON — commands, presets, suites, buttons and the simulator's reply table are all data. No Python required.
-- **Add a backend call**: add a public method to `webui/backend.py`; the front end reaches it through the single `invoke` dispatcher.
-- **Modify the front end**: edit the `.rose` sources under `src/`; `npm run dev` gives hot reload against a running `--browser` backend, `npm run check` type-checks.
-- **Verify an environment**: `python main.py --selftest` exercises the command library, suites, simulator link and paths without opening a window.
+</details>
 
-## Packaging
+## 打包
+
+<details>
+<summary><b>三平台单文件可执行程序</b></summary>
+
+<br>
 
 ```bash
 build_windows.bat     # Windows
 bash build_mac.sh     # macOS
-bash build_linux.sh   # Linux (requires WebKitGTK, see script notes)
+bash build_linux.sh   # Linux（需 WebKitGTK，见脚本注释）
 ```
 
-Each script installs the node dependencies (npm install), compiles the
-front-end (npm run build) and then packs the Python back-end with
-PyInstaller. Manual equivalent:
+脚本会先安装 node 依赖（npm install）、编译前端（npm run build），再用 PyInstaller 打包 Python 后端。手动等价命令：
 
 ```bash
 npm install
@@ -283,15 +279,17 @@ npm run build
 python build.py
 ```
 
-The result is a **single-file executable**: `dist/AT指令调试台.exe` (macOS / Linux: `dist/AT指令调试台`), freely movable and distributable — no Python required. Notes:
+产物是**单文件可执行程序**：`dist/AT指令调试台.exe`（macOS / Linux 为 `dist/AT指令调试台`），可直接移动、分发，无需 Python 环境。注意：
 
-- PyInstaller builds for the OS it runs on only; cross-compilation is not possible
-- The single-file build extracts to a temp dir on first launch, so startup is a bit slower
-- **Profiles are external**: no profiles are packed into the executable — after building, a copy of `profiles/` is placed in `dist/`, and the app reads profiles from that sibling folder; if no profile exists, an example profile is generated automatically on first launch; add or remove profiles by editing the folder, no rebuild needed
-- Icons are used as-is from the `assets/` folder (`icon.png` / `icon_256.png` / `icon.ico`) and bundled verbatim; to change the icon, just replace the files in that folder — no generation step involved
+- PyInstaller 只能打包当前系统，不能交叉编译——在哪个系统上跑脚本就出哪个系统的产物
+- 单文件版首次启动需解压到临时目录，稍慢属正常
+- **配置集为外置目录**：exe 不打包任何配置集，构建后自动复制一份 `profiles/` 到 `dist/`，应用从同级 `profiles/` 文件夹读取；若没有任何配置集，首次启动会自动生成一份示例配置集；增删配置集改文件夹即可，无需重新打包
+- 图标直接使用 `assets/` 文件夹（`icon.png` / `icon_256.png` / `icon.ico`），打包时原样内置；想换图标直接替换该文件夹里的同名文件即可
 
-GitHub Actions runs CI on every push (`.github/workflows/ci.yml`: install, type-check, front-end build, backend selftest). Pushing a `v*` tag runs the same checks, builds all three platforms with PyInstaller and publishes a pre-release whose notes are generated from the commits since the previous tag (`.github/workflows/release.yml`).
+GitHub Actions 在每次 push 时运行 CI（`.github/workflows/ci.yml`：安装依赖、类型检查、前端构建、后端自检）；推送 `v*` 标签会跑同样的检查，用 PyInstaller 打包三平台产物并发布 pre-release，发布说明由上个 tag 以来的提交自动生成（`.github/workflows/release.yml`）。
 
-## License
+</details>
+
+## 许可证
 
 [Apache License 2.0](LICENSE)
